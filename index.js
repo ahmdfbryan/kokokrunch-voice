@@ -113,6 +113,7 @@ function log(msg) {
 voiceActivity.load();
 stickyMessage.load();
 stickyManager.init(client, log);
+aiChat.init(log);
 
 async function connectToVoice() {
   if (reconnecting) return;
