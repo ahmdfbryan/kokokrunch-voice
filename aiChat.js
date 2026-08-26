@@ -14,6 +14,11 @@ const ai = new GoogleGenAI({
 });
 const MODEL = config.geminiModel;
 
+let log = console.log;
+function init(logger) {
+  if (logger) log = logger;
+}
+
 // Maksimal berapa "pertukaran" (user+model) yang disimpan per user, biar
 // konteks percakapan nggak membengkak terus (biaya token + relevansi).
 const MAX_HISTORY_TURNS = 12;
@@ -84,8 +89,8 @@ function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-const MAX_RETRIES = 2;
-const RETRY_DELAYS_MS = [1500, 3000]; // delay sebelum percobaan ke-2 dan ke-3
+const MAX_RETRIES = 3;
+const RETRY_DELAYS_MS = [1500, 3000, 5000]; // delay sebelum percobaan ke-2, ke-3, ke-4
 
 /**
  * Panggil Gemini API dengan retry otomatis kalau errornya sifatnya
@@ -97,11 +102,19 @@ async function callGeminiWithRetry(requestFn) {
   let lastErr;
   for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
     try {
-      return await withTimeout(requestFn(), REQUEST_TIMEOUT_MS, 'Gemini API');
+      const result = await withTimeout(requestFn(), REQUEST_TIMEOUT_MS, 'Gemini API');
+      if (attempt > 0) {
+        log(`[AI] Berhasil di percobaan ke-${attempt + 1} (model: ${MODEL}).`);
+      }
+      return result;
     } catch (err) {
       lastErr = err;
       const isLastAttempt = attempt === MAX_RETRIES;
-      if (isLastAttempt || !isTransientError(err)) {
+      const transient = isTransientError(err);
+      log(
+        `[AI] Percobaan ke-${attempt + 1}/${MAX_RETRIES + 1} gagal (model: ${MODEL}, transient: ${transient}): ${err.message}`
+      );
+      if (isLastAttempt || !transient) {
         throw err;
       }
       await sleep(RETRY_DELAYS_MS[attempt] || 3000);
@@ -159,4 +172,4 @@ function splitIntoChunks(text, maxLen = 2000) {
   return chunks;
 }
 
-module.exports = { askOnce, chatReply, resetSession, splitIntoChunks };
+module.exports = { init, askOnce, chatReply, resetSession, splitIntoChunks };
