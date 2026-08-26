@@ -60,15 +60,61 @@ function withTimeout(promise, ms, label) {
   return Promise.race([promise, timeoutPromise]).finally(() => clearTimeout(timer));
 }
 
+// Beberapa error dari Gemini API sifatnya SEMENTARA (server Google lagi
+// sibuk/lambat), bukan masalah permanen -- biasanya berhasil kalau dicoba
+// ulang. Kode-kode ini paling sering muncul di tier gratis karena prioritas
+// request-nya lebih rendah dibanding yang berbayar.
+const TRANSIENT_ERROR_PATTERNS = [
+  'DEADLINE_EXCEEDED',
+  '"code":504',
+  '"code":503',
+  '"code":429',
+  'UNAVAILABLE',
+  'RESOURCE_EXHAUSTED',
+  'ECONNRESET',
+  'ETIMEDOUT',
+];
+
+function isTransientError(err) {
+  const msg = String(err?.message || err);
+  return TRANSIENT_ERROR_PATTERNS.some((pattern) => msg.includes(pattern));
+}
+
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+const MAX_RETRIES = 2;
+const RETRY_DELAYS_MS = [1500, 3000]; // delay sebelum percobaan ke-2 dan ke-3
+
+/**
+ * Panggil Gemini API dengan retry otomatis kalau errornya sifatnya
+ * sementara (504/503/429/dll). Error yang BUKAN transient (misal API key
+ * salah, atau prompt ditolak) langsung dilempar tanpa retry -- percuma
+ * dicoba ulang kalau memang salahnya bukan di sisi koneksi/server.
+ */
+async function callGeminiWithRetry(requestFn) {
+  let lastErr;
+  for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
+    try {
+      return await withTimeout(requestFn(), REQUEST_TIMEOUT_MS, 'Gemini API');
+    } catch (err) {
+      lastErr = err;
+      const isLastAttempt = attempt === MAX_RETRIES;
+      if (isLastAttempt || !isTransientError(err)) {
+        throw err;
+      }
+      await sleep(RETRY_DELAYS_MS[attempt] || 3000);
+    }
+  }
+  throw lastErr;
+}
+
 /**
  * Tanya-jawab sekali, tanpa nyimpen konteks percakapan. Dipakai buat /ask.
  */
 async function askOnce(prompt) {
-  const response = await withTimeout(
-    ai.models.generateContent({ model: MODEL, contents: prompt }),
-    REQUEST_TIMEOUT_MS,
-    'Gemini API'
-  );
+  const response = await callGeminiWithRetry(() => ai.models.generateContent({ model: MODEL, contents: prompt }));
   return response.text || '(Gemini tidak memberikan balasan.)';
 }
 
@@ -80,11 +126,7 @@ async function chatReply(userId, message) {
   const session = getSession(userId);
   session.history.push({ role: 'user', parts: [{ text: message }] });
 
-  const response = await withTimeout(
-    ai.models.generateContent({ model: MODEL, contents: session.history }),
-    REQUEST_TIMEOUT_MS,
-    'Gemini API'
-  );
+  const response = await callGeminiWithRetry(() => ai.models.generateContent({ model: MODEL, contents: session.history }));
 
   const replyText = response.text || '(Gemini tidak memberikan balasan.)';
   session.history.push({ role: 'model', parts: [{ text: replyText }] });
