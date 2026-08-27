@@ -24,6 +24,12 @@ const aiChat = require('./aiChat');
 const commands = require('./commands');
 
 const EMBED_COLOR = 0x5865f2;
+// Catatan: URL ini dikoreksi dari input asli yang ada teks "hyphenhyphen"
+// di tengahnya (kemungkinan artefak text-processing yang nulis ulang "--"
+// jadi kata), diganti balik jadi "--". Kalau gambar nggak muncul, cek ulang
+// URL aslinya dari Blogger.
+const QUEUE_FINISHED_IMAGE_URL =
+  'https://blogger.googleusercontent.com/img/b/R29vZ2xl/AVvXsEieKReLQzN9jM64iFPWGbSLGlfCTaUyiHs_4auI98QmIUi8qFugjbXAw5sDu-t4FtJAH3L6v1IjRX2Y0doddGenaZxHZh9Q_MRek9aYaURbf2XwVz6agkyzIcM20P4JLu2NkqCHPvDP0md7cndFY2R--0MENXfWl2JVjPaG4yZCvX1JqK5d9hcaDhXAoZ8/s1627/ChatGPT%20Image%2027%20Agu%202026,%2019.56.40.png';
 
 const client = new Client({
   intents: [
@@ -84,7 +90,8 @@ async function onQueueEmpty(guildId, opts = {}) {
     const channel = await client.channels.fetch(queue.textChannelId);
     const embed = new EmbedBuilder()
       .setColor(EMBED_COLOR)
-      .setDescription('Antrian musik sudah selesai, semua lagu sudah diputar.');
+      .setDescription('Thank you for using our service Satpam Voice!\n\nYour suggestions and opinions are always considered!')
+      .setImage(QUEUE_FINISHED_IMAGE_URL);
     await channel.send({ embeds: [embed] });
   } catch (err) {
     log(`[STATUS] Gagal kirim notifikasi antrian selesai: ${err.message}`);
