@@ -74,6 +74,41 @@ function enqueue(guildId, track) {
 }
 
 /**
+ * Tambah BANYAK track sekaligus (dipakai buat playlist). Balikin daftar
+ * {track, etaSeconds} buat tiap track -- etaSeconds itu estimasi berapa
+ * detik lagi sampai track itu mulai diputar, dihitung dari durasi track
+ * yang lagi main (perkiraan durasi penuh, karena kita nggak nge-track
+ * posisi playback saat ini) + semua track yang udah lebih dulu di antrian.
+ */
+function enqueueMany(guildId, tracks) {
+  const queue = getQueue(guildId);
+
+  // Hitung ETA tiap track SEBELUM benar-benar di-push, berdasarkan state
+  // antrian saat ini (durasi track yang lagi main + sisa antrian lama).
+  let cumulative = queue.current?.durationSeconds || 0;
+  for (const existing of queue.tracks) {
+    cumulative += existing.durationSeconds || 0;
+  }
+
+  const etaList = [];
+  for (const track of tracks) {
+    etaList.push({ track, etaSeconds: cumulative });
+    cumulative += track.durationSeconds || 0;
+  }
+
+  queue.tracks.push(...tracks);
+  log(`[MUSIC] Enqueue ${tracks.length} track sekaligus (playlist) buat guild ${guildId}. Total antrian sekarang: ${queue.tracks.length}.`);
+
+  let startedImmediately = false;
+  if (!queue.current) {
+    playNext(guildId, { silent: true }); // sama kayak enqueue() biasa -- reply command sendiri udah kasih tau
+    startedImmediately = true;
+  }
+
+  return { etaList, startedImmediately };
+}
+
+/**
  * Mainkan track berikutnya di antrian. Kalau antrian kosong, balik ke
  * silent audio (supaya voice connection tetap "hidup" 24/7 tanpa musik).
  * `options.silent`: true -> tetap update status bot, tapi skip notifikasi
@@ -179,6 +214,7 @@ module.exports = {
   getQueue,
   setTextChannel,
   enqueue,
+  enqueueMany,
   playNext,
   playSilence,
   resyncAfterReconnect,
