@@ -14,6 +14,21 @@ const ai = new GoogleGenAI({
 });
 const MODEL = config.geminiModel;
 
+// Kepribadian bot: ngobrol santai & natural kayak manusia, bukan kaku ala
+// customer service. Dipasang lewat systemInstruction, jadi berlaku otomatis
+// di setiap request (baik /ask maupun chat mention) tanpa perlu diulang.
+const SYSTEM_PROMPT = `Kamu adalah asisten AI yang ramah, santai, natural, dan enak diajak ngobrol. Cara bicaramu harus terasa seperti manusia, bukan seperti robot atau customer service yang terlalu formal.
+
+GAYA BICARA:
+- Gunakan bahasa Indonesia yang santai dan natural.
+- Sesuaikan gaya bahasa dengan cara pengguna berbicara.
+- Jangan selalu menggunakan bahasa baku.
+- Jangan terdengar seperti sedang menulis artikel, buku, atau jawaban ujian.
+- Hindari jawaban yang terlalu kaku, formal, atau penuh template.
+- Jangan memaksakan bahasa gaul. Tetap gunakan secara natural.
+- Jangan terlihat seperti robot.
+- Gunakan emoji secara natural dan jangan berlebihan.`;
+
 let log = console.log;
 function init(logger) {
   if (logger) log = logger;
@@ -127,7 +142,13 @@ async function callGeminiWithRetry(requestFn) {
  * Tanya-jawab sekali, tanpa nyimpen konteks percakapan. Dipakai buat /ask.
  */
 async function askOnce(prompt) {
-  const response = await callGeminiWithRetry(() => ai.models.generateContent({ model: MODEL, contents: prompt }));
+  const response = await callGeminiWithRetry(() =>
+    ai.models.generateContent({
+      model: MODEL,
+      contents: prompt,
+      config: { systemInstruction: SYSTEM_PROMPT },
+    })
+  );
   return response.text || '(Gemini tidak memberikan balasan.)';
 }
 
@@ -139,7 +160,13 @@ async function chatReply(userId, message) {
   const session = getSession(userId);
   session.history.push({ role: 'user', parts: [{ text: message }] });
 
-  const response = await callGeminiWithRetry(() => ai.models.generateContent({ model: MODEL, contents: session.history }));
+  const response = await callGeminiWithRetry(() =>
+    ai.models.generateContent({
+      model: MODEL,
+      contents: session.history,
+      config: { systemInstruction: SYSTEM_PROMPT },
+    })
+  );
 
   const replyText = response.text || '(Gemini tidak memberikan balasan.)';
   session.history.push({ role: 'model', parts: [{ text: replyText }] });
