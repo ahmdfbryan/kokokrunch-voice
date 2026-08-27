@@ -1,6 +1,6 @@
 const { spawn, execFile } = require('child_process');
 
-const YT_DLP_BIN = 'yt-dlp';
+const YT_DLP_BIN = process.env.YT_DLP_PATH || 'yt-dlp';
 
 /**
  * Ambil metadata (judul, durasi, thumbnail) dari link YouTube tanpa
@@ -23,10 +23,53 @@ function getInfo(url) {
             title: data.title,
             url: data.webpage_url || url,
             durationText: formatDuration(data.duration),
+            durationSeconds: data.duration || null,
             thumbnail: data.thumbnail || null,
           });
         } catch (parseErr) {
           reject(new Error(`Gagal parsing info video: ${parseErr.message}`));
+        }
+      }
+    );
+  });
+}
+
+/**
+ * Ambil daftar isi playlist YouTube (pakai --flat-playlist biar cepat --
+ * nggak nge-extract detail penuh tiap video satu-satu). `maxTracks` batesin
+ * berapa banyak video yang di-ambil (yt-dlp berhenti extract lebih awal
+ * lewat --playlist-end, jadi playlist gede nggak bikin nunggu lama).
+ */
+function getPlaylistInfo(url, maxTracks = 100) {
+  return new Promise((resolve, reject) => {
+    execFile(
+      YT_DLP_BIN,
+      ['--flat-playlist', '--dump-json', '--no-warnings', '--playlist-end', String(maxTracks), url],
+      { maxBuffer: 1024 * 1024 * 50, timeout: 60_000 },
+      (err, stdout, stderr) => {
+        if (err) {
+          reject(new Error(describeYtDlpError(err, stderr)));
+          return;
+        }
+        try {
+          const lines = stdout.split('\n').filter((line) => line.trim());
+          const entries = lines
+            .map((line) => {
+              const data = JSON.parse(line);
+              const videoUrl = data.url?.startsWith('http') ? data.url : data.id ? `https://www.youtube.com/watch?v=${data.id}` : null;
+              if (!videoUrl) return null;
+              return {
+                title: data.title || 'Untitled',
+                url: videoUrl,
+                durationText: formatDuration(data.duration),
+                durationSeconds: data.duration || null,
+                thumbnail: data.thumbnails?.[0]?.url || data.thumbnail || null,
+              };
+            })
+            .filter(Boolean);
+          resolve(entries);
+        } catch (parseErr) {
+          reject(new Error(`Gagal parsing daftar playlist: ${parseErr.message}`));
         }
       }
     );
@@ -105,4 +148,4 @@ function formatDuration(totalSeconds) {
   return h > 0 ? `${h}:${mm}:${ss}` : `${mm}:${ss}`;
 }
 
-module.exports = { getInfo, streamAudio };
+module.exports = { getInfo, getPlaylistInfo, streamAudio };
