@@ -5,6 +5,16 @@ const ytdlp = require('./ytdlp');
 
 const YOUTUBE_URL_REGEX = /^(https?:\/\/)?(www\.)?(youtube\.com|youtu\.be|music\.youtube\.com)\/.+$/i;
 const SPOTIFY_URL_REGEX = /^(https?:\/\/)?(open\.spotify\.com)\/.+$/i;
+// Link playlist: ada param list=, TAPI nggak ada v= (video spesifik) atau
+// youtu.be (short link video). Kalau ada v=/youtu.be, anggap user emang
+// mau lagu itu doang walau linknya kebetulan nyangkut list= dari konteks
+// playlist yang lagi diputer di YouTube.
+const PLAYLIST_LIST_PARAM_REGEX = /[?&]list=([a-zA-Z0-9_-]+)/;
+const HAS_SPECIFIC_VIDEO_REGEX = /[?&]v=|youtu\.be\//i;
+
+function isPlaylistUrl(url) {
+  return PLAYLIST_LIST_PARAM_REGEX.test(url) && !HAS_SPECIFIC_VIDEO_REGEX.test(url);
+}
 
 /**
  * Cari 1 video YouTube paling relevan dari kata kunci teks.
@@ -16,6 +26,7 @@ async function searchYouTube(query) {
     title: result.title || query,
     url: `https://www.youtube.com/watch?v=${result.id}`,
     durationText: result.durationFormatted || null,
+    durationSeconds: result.duration ? Math.floor(result.duration / 1000) : null,
     thumbnail: result.thumbnail?.url || null,
   };
 }
@@ -48,6 +59,19 @@ async function resolveSpotifyUrl(url) {
 }
 
 /**
+ * Ambil semua track dari link playlist YouTube. Dibatasin maksimal
+ * `maxTracks` biar playlist raksasa nggak bikin antrian meledak / proses
+ * extract kelamaan.
+ */
+async function resolvePlaylist(url, maxTracks = 100) {
+  const entries = await ytdlp.getPlaylistInfo(url, maxTracks);
+  if (entries.length === 0) {
+    throw new Error('Playlist ini kosong atau nggak bisa diakses (mungkin private).');
+  }
+  return entries;
+}
+
+/**
  * Entry point utama: terima input mentah dari user (bisa link atau kata
  * kunci bebas), balikin metadata track yang siap diputar.
  */
@@ -70,4 +94,4 @@ async function resolveTrack(input) {
   return found;
 }
 
-module.exports = { resolveTrack };
+module.exports = { resolveTrack, isPlaylistUrl, resolvePlaylist };
