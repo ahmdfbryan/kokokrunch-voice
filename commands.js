@@ -72,12 +72,11 @@ const commands = [
         const { etaList } = musicManager.enqueueMany(interaction.guildId, tracks);
 
         const totalSeconds = tracks.reduce((sum, t) => sum + (t.durationSeconds || 0), 0);
-        const preview = etaList
+        const firstEtaSeconds = etaList[0]?.etaSeconds ?? 0;
+
+        const titleList = etaList
           .slice(0, PLAYLIST_PREVIEW_COUNT)
-          .map(
-            (e, i) =>
-              `${i + 1}. **${e.track.title}**\nTrack Length: ${e.track.durationText || '?'} — Estimated time until played: ${formatEta(e.etaSeconds)}`
-          )
+          .map((e, i) => `${i + 1}. ${e.track.title}`)
           .join('\n');
         const extra = etaList.length > PLAYLIST_PREVIEW_COUNT ? `\n...dan ${etaList.length - PLAYLIST_PREVIEW_COUNT} lagu lainnya` : '';
 
@@ -85,7 +84,10 @@ const commands = [
           .setColor(COLOR)
           .setTitle('Playlist Ditambahkan')
           .setDescription(
-            `${tracks.length} lagu dari playlist ditambahkan ke antrian (total durasi: ${formatTotalDuration(totalSeconds)}).\n\n${preview}${extra}`
+            `${tracks.length} lagu dari playlist ditambahkan ke antrian.\n\n` +
+              `${titleList}${extra}\n\n` +
+              `Track Length: ${formatTotalDuration(totalSeconds)}\n` +
+              `Estimated time until played: ${formatEta(firstEtaSeconds)}`
           );
         await interaction.editReply({ embeds: [embed] });
         return;
