@@ -60,23 +60,33 @@ async function onTrackStart(guildId, track, opts = {}) {
     log(`[STATUS] Gagal update activity: ${err.message}`);
   }
 
-  // Refresh card "Now Playing" (kalau ada yang lagi kebuka) SELALU, terlepas
-  // dari opts.silent -- itu cuma ngatur notifikasi teks di channel, bukan
-  // card interaktifnya.
-  refreshNowPlayingCard(guildId);
-
-  if (opts.silent) return;
+  if (opts.silent) return; // /play sendiri yang urus card-nya (lihat commands.js)
 
   const queue = musicManager.getQueue(guildId);
   if (!queue.textChannelId) return;
 
   try {
     const channel = await client.channels.fetch(queue.textChannelId);
-    const suffix = track.isAutoplay ? ' _(Autoplay)_' : '';
-    const embed = new EmbedBuilder().setColor(EMBED_COLOR).setDescription(`Started playing **${track.title}**${suffix}`);
-    await channel.send({ embeds: [embed] });
+
+    // Hapus card "Now Playing" lama (kalau ada), biar yang baru muncul di
+    // paling bawah chat -- sama kayak pola sticky message, bukan ngedit
+    // pesan lama yang mungkin udah ketinggalan jauh di atas.
+    const oldMsg = musicManager.getNowPlayingMessage(guildId);
+    if (oldMsg) {
+      try {
+        const oldChannel = await client.channels.fetch(oldMsg.channelId);
+        const oldMessage = await oldChannel.messages.fetch(oldMsg.messageId);
+        await oldMessage.delete();
+      } catch {
+        // udah kehapus manual / nggak ketemu, aman diabaikan
+      }
+    }
+
+    const { embed, components } = buildNowPlayingCard(guildId);
+    const sentMessage = await channel.send({ embeds: [embed], components });
+    musicManager.setNowPlayingMessage(guildId, channel.id, sentMessage.id);
   } catch (err) {
-    log(`[STATUS] Gagal kirim notifikasi Now Playing ke channel: ${err.message}`);
+    log(`[STATUS] Gagal kirim card Now Playing ke channel: ${err.message}`);
   }
 }
 
