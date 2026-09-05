@@ -16,6 +16,8 @@ const {
 
 const config = require('./config');
 const musicManager = require('./musicManager');
+const musicPlaylistStore = require('./musicPlaylistStore');
+const { buildNowPlayingCard } = require('./nowPlayingCard');
 const voiceActivity = require('./voiceActivity');
 const stickyMessage = require('./stickyMessage');
 const stickyManager = require('./stickyManager');
@@ -58,6 +60,11 @@ async function onTrackStart(guildId, track, opts = {}) {
     log(`[STATUS] Gagal update activity: ${err.message}`);
   }
 
+  // Refresh card "Now Playing" (kalau ada yang lagi kebuka) SELALU, terlepas
+  // dari opts.silent -- itu cuma ngatur notifikasi teks di channel, bukan
+  // card interaktifnya.
+  refreshNowPlayingCard(guildId);
+
   if (opts.silent) return;
 
   const queue = musicManager.getQueue(guildId);
@@ -81,6 +88,8 @@ async function onQueueEmpty(guildId, opts = {}) {
   } catch (err) {
     log(`[STATUS] Gagal reset activity: ${err.message}`);
   }
+
+  refreshNowPlayingCard(guildId);
 
   if (opts.silent) return;
 
@@ -106,6 +115,34 @@ async function onQueueEmpty(guildId, opts = {}) {
   }
 }
 
+/**
+ * Refresh (edit) card "Now Playing" yang lagi kebuka (kalau ada), biar
+ * progress bar / status tombolnya update. Dipanggil pas track ganti, pas
+ * antrian abis, DAN secara berkala lewat interval (lihat startNowPlayingRefreshLoop).
+ * Kalau pesannya udah kehapus / channel nggak ketemu, referensinya dibersihin
+ * biar nggak terus-terusan dicoba di refresh berikutnya.
+ */
+async function refreshNowPlayingCard(guildId) {
+  const npMsg = musicManager.getNowPlayingMessage(guildId);
+  if (!npMsg) return;
+
+  try {
+    const channel = await client.channels.fetch(npMsg.channelId);
+    const message = await channel.messages.fetch(npMsg.messageId);
+    const { embed, components } = buildNowPlayingCard(guildId);
+    await message.edit({ embeds: [embed], components });
+
+    // Kalau udah nggak ada musik yang main, berarti card ini "final" --
+    // nggak perlu di-refresh berkala lagi sampai ada /nowplaying baru.
+    if (!musicManager.getQueue(guildId).current) {
+      musicManager.setNowPlayingMessage(guildId, null, null);
+    }
+  } catch (err) {
+    log(`[NOWPLAYING] Gagal refresh card, berhenti nge-track pesan ini: ${err.message}`);
+    musicManager.setNowPlayingMessage(guildId, null, null);
+  }
+}
+
 // Kalau bot baru start/restart, member yang udah lebih dulu ada di voice
 // channel manapun perlu di-"mulai" sesinya sekarang juga (best-effort --
 // kita nggak tau kapan sebenarnya mereka join sebelum bot ini nyala).
@@ -126,6 +163,7 @@ function log(msg) {
 }
 
 voiceActivity.load();
+musicPlaylistStore.load();
 stickyMessage.load();
 stickyManager.init(client, log);
 aiChat.init(log);
@@ -326,22 +364,71 @@ client.on('voiceStateUpdate', (oldState, newState) => {
 client.on('interactionCreate', async (interaction) => {
   // Tombol "Join Giveaway" -- ini jenis interaksi beda (button), bukan command.
   if (interaction.isButton()) {
-    if (interaction.customId !== giveawayManager.JOIN_BUTTON_ID) return;
-    try {
-      const result = await giveawayManager.toggleParticipant(interaction.message.id, interaction.user.id);
-      if (!result.ok) {
-        await interaction.reply({ content: 'Giveaway ini sudah berakhir atau tidak ditemukan.', ephemeral: true });
-        return;
+    if (interaction.customId === giveawayManager.JOIN_BUTTON_ID) {
+      try {
+        const result = await giveawayManager.toggleParticipant(interaction.message.id, interaction.user.id);
+        if (!result.ok) {
+          await interaction.reply({ content: 'Giveaway ini sudah berakhir atau tidak ditemukan.', ephemeral: true });
+          return;
+        }
+        await interaction.reply({
+          content: result.joined
+            ? 'Kamu berhasil ikut giveaway ini. Klik lagi tombolnya kalau mau membatalkan.'
+            : 'Kamu keluar dari giveaway ini.',
+          ephemeral: true,
+        });
+        await giveawayManager.refreshParticipantCount(interaction.client, interaction.message.id);
+      } catch (err) {
+        log(`[GIVEAWAY] Error tombol join: ${err?.stack || err}`);
       }
-      await interaction.reply({
-        content: result.joined
-          ? 'Kamu berhasil ikut giveaway ini. Klik lagi tombolnya kalau mau membatalkan.'
-          : 'Kamu keluar dari giveaway ini.',
-        ephemeral: true,
-      });
-      await giveawayManager.refreshParticipantCount(interaction.client, interaction.message.id);
+      return;
+    }
+
+    if (interaction.customId.startsWith('music_')) {
+      const guildId = interaction.guildId;
+      // Pastiin referensi pesan yang di-track selalu nunjuk ke card yang
+      // BARUSAN diklik (kalau ada beberapa /nowplaying kebuka bersamaan).
+      musicManager.setNowPlayingMessage(guildId, interaction.channelId, interaction.message.id);
+
+      try {
+        if (interaction.customId === 'music_pause') {
+          if (musicManager.isPaused()) musicManager.resume(guildId);
+          else musicManager.pause(guildId);
+          // Pause/resume state-nya langsung berubah (sinkron), aman di-render ulang sekarang juga.
+          const { embed, components } = buildNowPlayingCard(guildId);
+          await interaction.update({ embeds: [embed], components });
+        } else if (interaction.customId === 'music_autoplay') {
+          musicManager.setAutoplay(guildId, !musicManager.isAutoplayEnabled(guildId));
+          const { embed, components } = buildNowPlayingCard(guildId);
+          await interaction.update({ embeds: [embed], components });
+        } else if (interaction.customId === 'music_skip' || interaction.customId === 'music_stop') {
+          // Skip/stop transisinya ASYNC (lewat event 'Idle'), jadi nggak
+          // langsung di-render ulang di sini -- nanti onTrackStart/onQueueEmpty
+          // yang manggil refreshNowPlayingCard() begitu transisinya kelar.
+          if (interaction.customId === 'music_skip') musicManager.skip(guildId);
+          else musicManager.stop(guildId);
+          await interaction.deferUpdate();
+        } else {
+          await interaction.deferUpdate();
+        }
+      } catch (err) {
+        log(`[MUSIC BUTTON] Error di tombol ${interaction.customId}: ${err?.stack || err}`);
+      }
+      return;
+    }
+
+    return;
+  }
+
+  // Autocomplete (misal saran nama playlist pas ngetik /playlist play) --
+  // ini jenis interaksi beda lagi, harus dijawab lewat respond(), bukan reply().
+  if (interaction.isAutocomplete()) {
+    const command = commands.find((c) => c.data.name === interaction.commandName);
+    if (!command || !command.autocomplete) return;
+    try {
+      await command.autocomplete(interaction);
     } catch (err) {
-      log(`[GIVEAWAY] Error tombol join: ${err?.stack || err}`);
+      log(`[AUTOCOMPLETE] Error di /${interaction.commandName}: ${err?.stack || err}`);
     }
     return;
   }
@@ -412,6 +499,12 @@ client.once('ready', () => {
   // Checkpoint berkala biar data voice activity nggak ilang banyak kalau
   // proses crash di tengah sesi panjang.
   setInterval(() => voiceActivity.checkpointAll(), 5 * 60 * 1000);
+  // Refresh berkala card "Now Playing" (kalau ada yang lagi kebuka) biar
+  // progress bar-nya keliatan jalan, bukan cuma update pas ganti lagu.
+  // 15 detik dipilih biar nggak mepet rate limit edit message Discord.
+  setInterval(() => {
+    if (currentGuildId) refreshNowPlayingCard(currentGuildId);
+  }, 15_000);
 });
 
 client.on('error', (err) => log(`Client error: ${err.message}`));
