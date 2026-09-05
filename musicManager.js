@@ -79,6 +79,13 @@ function killCurrentProcess(queue) {
  */
 function enqueue(guildId, track) {
   const queue = getQueue(guildId);
+
+  // Hitung ETA SEBELUM di-push (durasi track yang lagi main + sisa antrian lama)
+  let etaSeconds = queue.current?.durationSeconds || 0;
+  for (const existing of queue.tracks) {
+    etaSeconds += existing.durationSeconds || 0;
+  }
+
   queue.tracks.push(track);
   log(
     `[MUSIC] Enqueue "${track.title}" buat guild ${guildId}. Antrian sekarang: ${queue.tracks.length} track, sedang main: ${queue.current ? `"${queue.current.title}"` : '(silent)'}`
@@ -90,9 +97,9 @@ function enqueue(guildId, track) {
     // dari command /play sendiri sudah bilang "Started playing". Status bot
     // (Activity) tetap di-update seperti biasa lewat callback onTrackStart.
     playNext(guildId, { silent: true });
-    return { position: 0, startedImmediately: true }; // 0 = langsung main
+    return { position: 0, startedImmediately: true, etaSeconds: 0 }; // 0 = langsung main
   }
-  return { position, startedImmediately: false };
+  return { position, startedImmediately: false, etaSeconds };
 }
 
 /**
