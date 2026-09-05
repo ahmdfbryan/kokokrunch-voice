@@ -8,7 +8,7 @@ const EMBED_COLOR = 0x5865f2;
 // command, jadi kalau deskripsi command berubah, /commands ikut update
 // tanpa perlu diedit manual di sini.
 const CATEGORIES = [
-  { label: 'Musik', commandNames: ['play', 'skip', 'stop', 'queue'] },
+  { label: 'Musik', commandNames: ['play', 'skip', 'stop', 'queue', 'autoplay'] },
   { label: 'Voice Activity', commandNames: ['voicestats', 'voiceleaderboard'] },
   { label: 'Sticky Message', commandNames: ['Jadikan Sticky', 'unsticky'] },
   { label: 'Giveaway', commandNames: ['giveaway'] },
