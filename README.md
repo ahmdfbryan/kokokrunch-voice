@@ -23,6 +23,11 @@ Voice channel target (default): `1542046529299152938`
 - `/playlist play <nama>` — tambahin semua lagu dari playlist tersimpan ke antrian (ada autocomplete pas ngetik nama)
 - `/playlist list` — lihat semua playlist kamu beserta jumlah lagu & total durasi
 - `/playlist delete <nama>` — hapus playlist (ada autocomplete)
+- `/pause` — jeda musik yang lagi diputar
+- `/resume` — lanjutin musik yang dijeda
+- `/volume <0-200>` — atur volume dalam persen, langsung berlaku ke lagu yang lagi main
+- `/loop <off|lagu ini|antrian>` — ulang 1 lagu terus-menerus, atau ulang seluruh antrian setelah abis. Catatan: `/skip` selalu ngelewatin loop (nggak akan muter ulang lagu yang di-skip), tapi loop tetap aktif buat lagu berikutnya.
+- `/nowplaying` — card interaktif nunjukkin lagu yang lagi diputar (judul, thumbnail, siapa yang minta, Queue Size, Volume, Loop, progress bar) + tombol **Pause/Resume**, **Skip**, **Stop**, **AutoPlay**. Progress bar-nya di-refresh otomatis tiap ~15 detik (dibikin nggak terlalu sering biar nggak kena rate limit edit message Discord).
 
 Batasan: maksimal 25 playlist per user, maksimal 100 lagu per playlist.
 
