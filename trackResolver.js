@@ -71,6 +71,36 @@ async function resolvePlaylist(url, maxTracks = 100) {
   return entries;
 }
 
+const VIDEO_ID_REGEX = /(?:[?&]v=|youtu\.be\/)([a-zA-Z0-9_-]{11})/;
+
+function extractVideoId(url) {
+  const match = url.match(VIDEO_ID_REGEX);
+  return match ? match[1] : null;
+}
+
+/**
+ * Buat fitur autoplay: cari 1 lagu "mirip" dari lagu yang barusan diputar,
+ * pakai YouTube Mix (playlist otomatis yang di-generate YouTube berdasarkan
+ * 1 video -- ini yang biasa dipakai bot musik lain buat autoplay).
+ * `excludeUrls` buat nyegah muter-muter kepilih lagu yang sama lagi.
+ */
+async function getAutoplayTrack(seedUrl, excludeUrls = []) {
+  const videoId = extractVideoId(seedUrl);
+  if (!videoId) return null;
+
+  const mixUrl = `https://www.youtube.com/watch?v=${videoId}&list=RD${videoId}`;
+  let entries;
+  try {
+    entries = await ytdlp.getPlaylistInfo(mixUrl, 15);
+  } catch {
+    return null; // Mix nggak ketemu / gagal extract -- biar caller yang fallback
+  }
+
+  const excludeSet = new Set([...excludeUrls, seedUrl]);
+  const candidate = entries.find((e) => !excludeSet.has(e.url) && extractVideoId(e.url) !== videoId);
+  return candidate || null;
+}
+
 /**
  * Entry point utama: terima input mentah dari user (bisa link atau kata
  * kunci bebas), balikin metadata track yang siap diputar.
@@ -94,4 +124,4 @@ async function resolveTrack(input) {
   return found;
 }
 
-module.exports = { resolveTrack, isPlaylistUrl, resolvePlaylist };
+module.exports = { resolveTrack, isPlaylistUrl, resolvePlaylist, getAutoplayTrack };
