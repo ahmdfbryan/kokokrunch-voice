@@ -162,6 +162,10 @@ async function refreshNowPlayingCard(guildId) {
 const NP_REPOSITION_DEBOUNCE_MS = 3000;
 const NP_REPOSITION_MAX_WAIT_MS = 15_000;
 const npRepositionTimers = new Map(); // guildId -> { debounceTimeout, maxTimeout }
+// Selama guildId ada di sini, SEMUA messageCreate diabaikan buat guild itu --
+// ini nyegah pesan hasil kirim-ulang kita sendiri kedetect balik sebagai
+// "chat baru" (yang kalau dibiarin bikin loop kedip-kedip terus-terusan).
+const npRepositioningInFlight = new Set();
 
 function scheduleNowPlayingReposition(guildId) {
   if (!musicManager.getNowPlayingMessage(guildId)) return;
@@ -189,6 +193,7 @@ async function repositionNowPlayingCard(guildId) {
   if (!npMsg) return;
   if (!musicManager.getQueue(guildId).current) return; // nggak ada musik, nggak usah dipindah
 
+  npRepositioningInFlight.add(guildId);
   try {
     const channel = await client.channels.fetch(npMsg.channelId);
     try {
@@ -202,6 +207,11 @@ async function repositionNowPlayingCard(guildId) {
     musicManager.setNowPlayingMessage(guildId, channel.id, sentMessage.id);
   } catch (err) {
     log(`[NOWPLAYING] Gagal reposisi card ke bawah: ${err.message}`);
+  } finally {
+    // Jeda dikit sebelum ngelepas flag -- ngasih waktu event messageCreate
+    // buat pesan yang baru aja dikirim (yang bisa nyampe agak telat lewat
+    // gateway) biar tetep ke-filter dengan benar, nggak trigger diri sendiri.
+    setTimeout(() => npRepositioningInFlight.delete(guildId), 2000);
   }
 }
 
@@ -536,6 +546,7 @@ client.on('messageCreate', (message) => {
 // trigger reposisi buat dirinya sendiri pas baru aja dikirim ulang.
 client.on('messageCreate', (message) => {
   if (!currentGuildId) return;
+  if (npRepositioningInFlight.has(currentGuildId)) return;
   const npMsg = musicManager.getNowPlayingMessage(currentGuildId);
   if (!npMsg || npMsg.channelId !== message.channelId) return;
   if (message.id === npMsg.messageId) return;
