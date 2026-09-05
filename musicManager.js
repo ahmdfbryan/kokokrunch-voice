@@ -34,9 +34,40 @@ function getQueue(guildId) {
       textChannelId: null,
       autoplayEnabled: false,
       recentAutoplayUrls: [],
+      history: [], // track yang udah/lagi diputar di sesi ini -- basis buat fitur "Simpan Sesi jadi Playlist"
     });
   }
   return queues.get(guildId);
+}
+
+// Batas panjang histori sesi biar nggak numpuk mulu kalau bot nyala berhari-hari
+const SESSION_HISTORY_LIMIT = 200;
+
+/**
+ * Gabungin histori (track yang udah/lagi diputar) + sisa antrian jadi 1
+ * daftar urut tanpa duplikat (dedupe by URL, kemunculan pertama menang).
+ * Ini yang dipakai fitur "Simpan Sesi jadi Playlist" (/playlist save) --
+ * merepresentasikan seluruh sesi dengerin musik saat ini dari awal sampai
+ * yang masih ngantri.
+ */
+function getSessionTracks(guildId) {
+  const queue = getQueue(guildId);
+  const seen = new Set();
+  const combined = [];
+
+  for (const t of queue.history) {
+    if (!seen.has(t.url)) {
+      seen.add(t.url);
+      combined.push(t);
+    }
+  }
+  for (const t of queue.tracks) {
+    if (!seen.has(t.url)) {
+      seen.add(t.url);
+      combined.push(t);
+    }
+  }
+  return combined;
 }
 
 /**
@@ -173,6 +204,14 @@ function playNext(guildId, options = {}) {
 
   queue.current = next;
 
+  // Catat ke histori sesi (buat fitur "Simpan Sesi jadi Playlist"). Dicatat
+  // begitu track mulai diputar -- termasuk track hasil autoplay, karena itu
+  // tetap bagian dari "apa yang didengerin" di sesi ini.
+  queue.history.push(next);
+  if (queue.history.length > SESSION_HISTORY_LIMIT) {
+    queue.history.shift();
+  }
+
   try {
     const stream = ytdlp.streamAudio(next.url);
     queue.currentProcess = stream.ytDlpProcess;
@@ -295,6 +334,7 @@ module.exports = {
   isAutoplayEnabled,
   enqueue,
   enqueueMany,
+  getSessionTracks,
   playNext,
   playSilence,
   resyncAfterReconnect,
