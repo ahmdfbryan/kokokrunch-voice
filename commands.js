@@ -215,11 +215,71 @@ const commands = [
       await interaction.reply({ embeds: [textEmbed(message)] });
     },
   },
+
+  {
+    data: new SlashCommandBuilder().setName('pause').setDescription('Jeda musik yang lagi diputar'),
+    async execute(interaction) {
+      const ok = musicManager.pause(interaction.guildId);
+      await interaction.reply({
+        embeds: [textEmbed(ok ? 'Musik dijeda.' : 'Nggak ada musik yang lagi diputar.')],
+        ephemeral: !ok,
+      });
+    },
+  },
+
+  {
+    data: new SlashCommandBuilder().setName('resume').setDescription('Lanjutin musik yang lagi dijeda'),
+    async execute(interaction) {
+      const ok = musicManager.resume(interaction.guildId);
+      await interaction.reply({
+        embeds: [textEmbed(ok ? 'Musik dilanjutkan.' : 'Nggak ada musik yang lagi diputar.')],
+        ephemeral: !ok,
+      });
+    },
+  },
+
+  {
+    data: new SlashCommandBuilder()
+      .setName('volume')
+      .setDescription('Atur volume musik (0-200%)')
+      .addIntegerOption((opt) =>
+        opt.setName('persen').setDescription('Volume dalam persen').setRequired(true).setMinValue(0).setMaxValue(200)
+      ),
+    async execute(interaction) {
+      const percent = interaction.options.getInteger('persen', true);
+      musicManager.setVolume(interaction.guildId, percent / 100);
+      await interaction.reply({ embeds: [textEmbed(`Volume diatur ke ${percent}%.`)] });
+    },
+  },
+
+  {
+    data: new SlashCommandBuilder()
+      .setName('loop')
+      .setDescription('Atur mode loop')
+      .addStringOption((opt) =>
+        opt
+          .setName('mode')
+          .setDescription('Mode loop')
+          .setRequired(true)
+          .addChoices(
+            { name: 'off', value: 'off' },
+            { name: 'lagu ini', value: 'track' },
+            { name: 'antrian', value: 'queue' }
+          )
+      ),
+    async execute(interaction) {
+      const mode = interaction.options.getString('mode', true);
+      musicManager.setLoopMode(interaction.guildId, mode);
+      const label = { off: 'dimatikan', track: 'lagu ini diulang terus', queue: 'antrian diulang terus' }[mode];
+      await interaction.reply({ embeds: [textEmbed(`Loop ${label}.`)] });
+    },
+  },
 ];
 
 module.exports = [
   ...commands,
-  ...require('./playlistCommands'),
+  ...require('./musicPlaylistCommands'),
+  ...require('./nowPlayingCommand'),
   ...require('./voiceActivityCommands'),
   ...require('./stickyCommands'),
   ...require('./giveawayCommands'),
