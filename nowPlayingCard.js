@@ -17,11 +17,12 @@ function formatTime(totalSeconds) {
 }
 
 /**
- * Progress bar teks, misal "▬▬▬🔘▬▬▬▬". Panjangnya sengaja dibikin pendek
- * (bukan puluhan karakter) biar nggak ke-wrap berantakan di layar HP --
- * Discord bungkus baris embed cukup sempit di mobile.
+ * Progress bar teks, misal "▬▬🔘▬▬▬". Dibikin pendek banget (bukan
+ * puluhan karakter) biar nggak ke-wrap -- teks kode/monospace di Discord
+ * ternyata lebih lebar dari perkiraan, jadi bar-nya sengaja diperkecil
+ * dan waktu di kiri-kanan nggak lagi pakai format kode.
  */
-function renderProgressBar(elapsed, total, length = 10) {
+function renderProgressBar(elapsed, total, length = 8) {
   if (!total || total <= 0) return '▬'.repeat(length);
   const ratio = Math.min(1, Math.max(0, elapsed / total));
   const filled = Math.round(ratio * (length - 1));
@@ -71,7 +72,7 @@ function buildNowPlayingCard(guildId) {
     .setDescription(`👤 Added by **${track.requestedBy}**${track.isAutoplay ? '  •  _via Autoplay_' : ''}`)
     .setThumbnail(track.thumbnail || null)
     .addFields(
-      { name: '\u200b', value: `\`${formatTime(elapsed)}\` ${bar} \`${formatTime(total)}\`` },
+      { name: '\u200b', value: `**${formatTime(elapsed)}** ${bar} **${formatTime(total)}**` },
       { name: '📜 Queue', value: `${queue.tracks.length} song${queue.tracks.length === 1 ? '' : 's'}`, inline: true },
       { name: `${volumeIcon} Volume`, value: `${volumePercent}%`, inline: true },
       { name: `${loopMeta.emoji} Loop`, value: loopMeta.fieldValue, inline: true }
