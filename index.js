@@ -155,6 +155,56 @@ async function refreshNowPlayingCard(guildId) {
   }
 }
 
+// Card "Now Playing" dibuat "nempel" ke bawah chat kayak sticky message:
+// kalau ada chat baru numpuk di atasnya, card-nya dipindah (hapus + kirim
+// ulang) ke posisi paling bawah lagi. Pakai debounce biar nggak spam
+// delete+send tiap 1 pesan kalau chat lagi rame.
+const NP_REPOSITION_DEBOUNCE_MS = 3000;
+const NP_REPOSITION_MAX_WAIT_MS = 15_000;
+const npRepositionTimers = new Map(); // guildId -> { debounceTimeout, maxTimeout }
+
+function scheduleNowPlayingReposition(guildId) {
+  if (!musicManager.getNowPlayingMessage(guildId)) return;
+
+  let entry = npRepositionTimers.get(guildId);
+  if (!entry) {
+    entry = { debounceTimeout: null, maxTimeout: null };
+    npRepositionTimers.set(guildId, entry);
+    entry.maxTimeout = setTimeout(() => repositionNowPlayingCard(guildId), NP_REPOSITION_MAX_WAIT_MS);
+  }
+
+  if (entry.debounceTimeout) clearTimeout(entry.debounceTimeout);
+  entry.debounceTimeout = setTimeout(() => repositionNowPlayingCard(guildId), NP_REPOSITION_DEBOUNCE_MS);
+}
+
+async function repositionNowPlayingCard(guildId) {
+  const entry = npRepositionTimers.get(guildId);
+  if (entry) {
+    clearTimeout(entry.debounceTimeout);
+    clearTimeout(entry.maxTimeout);
+    npRepositionTimers.delete(guildId);
+  }
+
+  const npMsg = musicManager.getNowPlayingMessage(guildId);
+  if (!npMsg) return;
+  if (!musicManager.getQueue(guildId).current) return; // nggak ada musik, nggak usah dipindah
+
+  try {
+    const channel = await client.channels.fetch(npMsg.channelId);
+    try {
+      const oldMessage = await channel.messages.fetch(npMsg.messageId);
+      await oldMessage.delete();
+    } catch {
+      // udah kehapus manual / nggak ketemu, aman diabaikan
+    }
+    const { embed, components } = buildNowPlayingCard(guildId);
+    const sentMessage = await channel.send({ embeds: [embed], components });
+    musicManager.setNowPlayingMessage(guildId, channel.id, sentMessage.id);
+  } catch (err) {
+    log(`[NOWPLAYING] Gagal reposisi card ke bawah: ${err.message}`);
+  }
+}
+
 // Kalau bot baru start/restart, member yang udah lebih dulu ada di voice
 // channel manapun perlu di-"mulai" sesinya sekarang juga (best-effort --
 // kita nggak tau kapan sebenarnya mereka join sebelum bot ini nyala).
@@ -477,6 +527,16 @@ client.on('messageCreate', (message) => {
   if (message.author.bot) return;
   if (!stickyMessage.getSticky(message.channelId)) return;
   stickyManager.scheduleRepost(message.channelId);
+});
+
+// Now Playing card: "nempel" ke bawah chat kayak sticky message -- kalau
+// ada chat baru di channel yang sama, jadwalin pindahin card ke bawah lagi.
+client.on('messageCreate', (message) => {
+  if (message.author.bot) return;
+  if (!currentGuildId) return;
+  const npMsg = musicManager.getNowPlayingMessage(currentGuildId);
+  if (!npMsg || npMsg.channelId !== message.channelId) return;
+  scheduleNowPlayingReposition(currentGuildId);
 });
 
 // AI chat: mention bot di channel voice Satpam Voice buat ngobrol. Dibatasi
