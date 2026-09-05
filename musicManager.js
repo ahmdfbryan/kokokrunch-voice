@@ -1,4 +1,4 @@
-const { createAudioResource, StreamType } = require('@discordjs/voice');
+const { createAudioResource, StreamType, AudioPlayerStatus } = require('@discordjs/voice');
 const { createSilentAudioStream } = require('./silentstream');
 const ytdlp = require('./ytdlp');
 const trackResolver = require('./trackResolver');
@@ -31,43 +31,17 @@ function getQueue(guildId) {
       tracks: [],
       current: null,
       currentProcess: null,
+      currentResource: null,
+      currentStartedAt: null, // timestamp (ms) pas track sekarang mulai diputar
       textChannelId: null,
       autoplayEnabled: false,
       recentAutoplayUrls: [],
-      history: [], // track yang udah/lagi diputar di sesi ini -- basis buat fitur "Simpan Sesi jadi Playlist"
+      volume: 1, // 1 = 100%. Disimpen logaritmik lewat setVolumeLogarithmic.
+      loopMode: 'off', // 'off' | 'track' | 'queue'
+      nowPlayingMessage: null, // { channelId, messageId } -- buat refresh progress bar berkala
     });
   }
   return queues.get(guildId);
-}
-
-// Batas panjang histori sesi biar nggak numpuk mulu kalau bot nyala berhari-hari
-const SESSION_HISTORY_LIMIT = 200;
-
-/**
- * Gabungin histori (track yang udah/lagi diputar) + sisa antrian jadi 1
- * daftar urut tanpa duplikat (dedupe by URL, kemunculan pertama menang).
- * Ini yang dipakai fitur "Simpan Sesi jadi Playlist" (/playlist save) --
- * merepresentasikan seluruh sesi dengerin musik saat ini dari awal sampai
- * yang masih ngantri.
- */
-function getSessionTracks(guildId) {
-  const queue = getQueue(guildId);
-  const seen = new Set();
-  const combined = [];
-
-  for (const t of queue.history) {
-    if (!seen.has(t.url)) {
-      seen.add(t.url);
-      combined.push(t);
-    }
-  }
-  for (const t of queue.tracks) {
-    if (!seen.has(t.url)) {
-      seen.add(t.url);
-      combined.push(t);
-    }
-  }
-  return combined;
 }
 
 /**
@@ -177,7 +151,25 @@ function enqueueMany(guildId, tracks) {
 function playNext(guildId, options = {}) {
   const queue = getQueue(guildId);
   const prevCurrent = queue.current ? queue.current.title : '(silent)';
+  const finishedTrack = queue.current;
+  const wasSkipped = queue.skipRequested === true;
+  queue.skipRequested = false;
+
   killCurrentProcess(queue);
+
+  // Loop-track: kalau abis NATURAL (bukan di-skip) dan mode-nya 'track',
+  // muterin ulang track yang sama, bukan lanjut ke antrian.
+  if (finishedTrack && !wasSkipped && queue.loopMode === 'track') {
+    log(`[MUSIC] Loop track: mengulang "${finishedTrack.title}"`);
+    playTrackNow(guildId, finishedTrack, options);
+    return;
+  }
+
+  // Loop-queue: taro track yang abis (natural) ke belakang antrian biar
+  // nanti gilirannya muter lagi setelah semua track lain kelar.
+  if (finishedTrack && !wasSkipped && queue.loopMode === 'queue') {
+    queue.tracks.push(finishedTrack);
+  }
 
   const next = queue.tracks.shift();
   log(
@@ -185,7 +177,6 @@ function playNext(guildId, options = {}) {
   );
 
   if (!next) {
-    const finishedTrack = queue.current; // track yang barusan abis, dipakai sebagai "biji" autoplay
     queue.current = null;
 
     // Kalau dipicu dari /stop, suppressAutoplay & suppressEmptyNotify udah
@@ -202,36 +193,48 @@ function playNext(guildId, options = {}) {
     return;
   }
 
-  queue.current = next;
+  playTrackNow(guildId, next, options);
+}
 
-  // Catat ke histori sesi (buat fitur "Simpan Sesi jadi Playlist"). Dicatat
-  // begitu track mulai diputar -- termasuk track hasil autoplay, karena itu
-  // tetap bagian dari "apa yang didengerin" di sesi ini.
-  queue.history.push(next);
-  if (queue.history.length > SESSION_HISTORY_LIMIT) {
-    queue.history.shift();
-  }
+/**
+ * Beneran mulai muterin 1 track (spawn stream yt-dlp, bikin AudioResource
+ * dengan volume yang bisa diatur, play, catet waktu mulai, trigger callback).
+ * Dipisah dari playNext() biar bisa dipakai ulang buat loop-track (replay
+ * track yang sama tanpa perlu shift dari antrian).
+ */
+function playTrackNow(guildId, track, options = {}) {
+  const queue = getQueue(guildId);
+  queue.current = track;
 
   try {
-    const stream = ytdlp.streamAudio(next.url);
+    const stream = ytdlp.streamAudio(track.url);
     queue.currentProcess = stream.ytDlpProcess;
 
     stream.on('error', (err) => {
-      log(`[MUSIC] Stream error buat "${next.title}": ${err.message}`);
+      log(`[MUSIC] Stream error buat "${track.title}": ${err.message}`);
     });
 
-    const resource = createAudioResource(stream, { inputType: StreamType.Arbitrary });
+    const resource = createAudioResource(stream, { inputType: StreamType.Arbitrary, inlineVolume: true });
+    resource.volume.setVolumeLogarithmic(queue.volume);
+    queue.currentResource = resource;
+    queue.currentStartedAt = Date.now();
+
     player.play(resource);
-    log(`[MUSIC] Now playing: ${next.title} (${next.durationText || '?'}) diminta oleh ${next.requestedBy}`);
-    if (onTrackStart) onTrackStart(guildId, next, { silent: options.silent === true });
+    log(`[MUSIC] Now playing: ${track.title} (${track.durationText || '?'}) diminta oleh ${track.requestedBy}`);
+    if (onTrackStart) onTrackStart(guildId, track, { silent: options.silent === true });
   } catch (err) {
-    log(`[MUSIC] Gagal play "${next.title}": ${err.message}, skip ke berikutnya...`);
+    log(`[MUSIC] Gagal play "${track.title}": ${err.message}, skip ke berikutnya...`);
     playNext(guildId);
   }
 }
 
-function playSilence() {
+function playSilence(guildId) {
   if (!player) return;
+  if (guildId) {
+    const queue = getQueue(guildId);
+    queue.currentStartedAt = null;
+    queue.currentResource = null;
+  }
   const resource = createAudioResource(createSilentAudioStream(), { inputType: StreamType.Raw });
   player.play(resource);
 }
@@ -242,7 +245,7 @@ function playSilence() {
  */
 function fallbackToSilence(guildId) {
   const queue = getQueue(guildId);
-  playSilence();
+  playSilence(guildId);
   const silent = queue.suppressEmptyNotify === true;
   queue.suppressEmptyNotify = false;
   if (onQueueEmpty) onQueueEmpty(guildId, { silent });
@@ -285,8 +288,80 @@ async function tryAutoplay(guildId, seedTrack) {
 function skip(guildId) {
   const queue = getQueue(guildId);
   if (!queue.current) return false;
+  queue.skipRequested = true; // biar loop-track nggak muter ulang track yang di-skip
   player.stop();
   return true;
+}
+
+/**
+ * Set volume (0 - 2, dengan 1 = 100%). Langsung berlaku ke track yang lagi
+ * main (kalau ada) via VolumeTransformer, dan disimpen buat track berikutnya.
+ */
+function setVolume(guildId, volume) {
+  const queue = getQueue(guildId);
+  queue.volume = volume;
+  if (queue.currentResource?.volume) {
+    queue.currentResource.volume.setVolumeLogarithmic(volume);
+  }
+}
+
+function getVolume(guildId) {
+  return getQueue(guildId).volume;
+}
+
+/**
+ * Set mode loop: 'off' | 'track' | 'queue'. Logic pengulangannya sendiri
+ * ada di playNext().
+ */
+function setLoopMode(guildId, mode) {
+  const queue = getQueue(guildId);
+  queue.loopMode = mode;
+}
+
+function getLoopMode(guildId) {
+  return getQueue(guildId).loopMode;
+}
+
+/**
+ * Pause/resume playback. Return false kalau nggak ada yang lagi main.
+ */
+function pause(guildId) {
+  const queue = getQueue(guildId);
+  if (!queue.current || !player) return false;
+  return player.pause();
+}
+
+function resume(guildId) {
+  const queue = getQueue(guildId);
+  if (!queue.current || !player) return false;
+  return player.unpause();
+}
+
+function isPaused() {
+  return player?.state?.status === AudioPlayerStatus.Paused;
+}
+
+/**
+ * Berapa detik track sekarang udah jalan (dipakai buat progress bar).
+ * 0 kalau nggak ada yang main / belum sempet nyatet waktu mulai.
+ */
+function getElapsedSeconds(guildId) {
+  const queue = getQueue(guildId);
+  if (!queue.current || !queue.currentStartedAt) return 0;
+  return Math.floor((Date.now() - queue.currentStartedAt) / 1000);
+}
+
+/**
+ * Simpen referensi pesan "Now Playing" biar bisa di-refresh berkala
+ * (progress bar jalan) tanpa perlu tau channel/message ID dari luar modul.
+ */
+function setNowPlayingMessage(guildId, channelId, messageId) {
+  const queue = getQueue(guildId);
+  queue.nowPlayingMessage = messageId ? { channelId, messageId } : null;
+}
+
+function getNowPlayingMessage(guildId) {
+  return getQueue(guildId).nowPlayingMessage;
 }
 
 /**
@@ -322,7 +397,7 @@ function resyncAfterReconnect(guildId) {
     queue.current = null;
     playNext(guildId);
   } else {
-    playSilence();
+    playSilence(guildId);
   }
 }
 
@@ -332,9 +407,18 @@ module.exports = {
   setTextChannel,
   setAutoplay,
   isAutoplayEnabled,
+  setVolume,
+  getVolume,
+  setLoopMode,
+  getLoopMode,
+  pause,
+  resume,
+  isPaused,
+  getElapsedSeconds,
+  setNowPlayingMessage,
+  getNowPlayingMessage,
   enqueue,
   enqueueMany,
-  getSessionTracks,
   playNext,
   playSilence,
   resyncAfterReconnect,
