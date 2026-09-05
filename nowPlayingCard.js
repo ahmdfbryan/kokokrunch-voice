@@ -17,10 +17,11 @@ function formatTime(totalSeconds) {
 }
 
 /**
- * Progress bar teks, misal "▬▬▬▬▬🔘▬▬▬▬▬▬▬▬▬". Kalau durasi total nggak
- * diketahui (durationSeconds null), tampilin bar kosong aja.
+ * Progress bar teks, misal "▬▬▬🔘▬▬▬▬". Panjangnya sengaja dibikin pendek
+ * (bukan puluhan karakter) biar nggak ke-wrap berantakan di layar HP --
+ * Discord bungkus baris embed cukup sempit di mobile.
  */
-function renderProgressBar(elapsed, total, length = 18) {
+function renderProgressBar(elapsed, total, length = 10) {
   if (!total || total <= 0) return '▬'.repeat(length);
   const ratio = Math.min(1, Math.max(0, elapsed / total));
   const filled = Math.round(ratio * (length - 1));
@@ -67,12 +68,10 @@ function buildNowPlayingCard(guildId) {
     .setColor(COLOR)
     .setAuthor({ name: paused ? '⏸️  Paused' : '🎵  Now Playing' })
     .setTitle(track.title)
-    .setDescription(
-      `👤 Added by **${track.requestedBy}**${track.isAutoplay ? '  •  _via Autoplay_' : ''}\n` +
-        `\`${formatTime(elapsed)}\`  ${bar}  \`${formatTime(total)}\``
-    )
+    .setDescription(`👤 Added by **${track.requestedBy}**${track.isAutoplay ? '  •  _via Autoplay_' : ''}`)
     .setThumbnail(track.thumbnail || null)
     .addFields(
+      { name: '\u200b', value: `\`${formatTime(elapsed)}\` ${bar} \`${formatTime(total)}\`` },
       { name: '📜 Queue', value: `${queue.tracks.length} song${queue.tracks.length === 1 ? '' : 's'}`, inline: true },
       { name: `${volumeIcon} Volume`, value: `${volumePercent}%`, inline: true },
       { name: `${loopMeta.emoji} Loop`, value: loopMeta.fieldValue, inline: true }
