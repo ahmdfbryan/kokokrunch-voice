@@ -530,12 +530,15 @@ client.on('messageCreate', (message) => {
 });
 
 // Now Playing card: "nempel" ke bawah chat kayak sticky message -- kalau
-// ada chat baru di channel yang sama, jadwalin pindahin card ke bawah lagi.
+// ada pesan APAPUN yang numpuk di atasnya (dari user maupun bot, termasuk
+// reply command lain kayak "ditambahkan ke antrian"), jadwalin pindahin
+// card ke bawah lagi. Cuma pesan card ITU SENDIRI yang di-skip, biar nggak
+// trigger reposisi buat dirinya sendiri pas baru aja dikirim ulang.
 client.on('messageCreate', (message) => {
-  if (message.author.bot) return;
   if (!currentGuildId) return;
   const npMsg = musicManager.getNowPlayingMessage(currentGuildId);
   if (!npMsg || npMsg.channelId !== message.channelId) return;
+  if (message.id === npMsg.messageId) return;
   scheduleNowPlayingReposition(currentGuildId);
 });
 
