@@ -211,9 +211,7 @@ const commands = [
       const enabled = mode === 'on';
       musicManager.setAutoplay(interaction.guildId, enabled);
 
-      const message = enabled
-        ? 'Autoplay dinyalakan. Kalau antrian abis, bot bakal otomatis lanjut ke lagu yang mirip.'
-        : 'Autoplay dimatikan.';
+      const message = enabled ? 'Autoplay has been enabled' : 'Autoplay has been disabled';
       await interaction.reply({ embeds: [textEmbed(message)] });
     },
   },
