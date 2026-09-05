@@ -219,6 +219,7 @@ const commands = [
 
 module.exports = [
   ...commands,
+  ...require('./playlistCommands'),
   ...require('./voiceActivityCommands'),
   ...require('./stickyCommands'),
   ...require('./giveawayCommands'),
