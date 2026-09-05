@@ -2,6 +2,7 @@ const { SlashCommandBuilder, EmbedBuilder } = require('discord.js');
 const musicManager = require('./musicManager');
 const playlistStore = require('./musicPlaylistStore');
 const trackResolver = require('./trackResolver');
+const { buildNowPlayingCard } = require('./nowPlayingCard');
 
 const COLOR = 0x5865f2;
 const MAX_NAME_LEN = 50;
@@ -214,11 +215,17 @@ const playlistCommand = {
       await interaction.deferReply();
       const tracksCopy = tracks.map((t) => ({ ...t, requestedBy: interaction.user.tag }));
       musicManager.setTextChannel(interaction.guildId, interaction.channelId);
-      musicManager.enqueueMany(interaction.guildId, tracksCopy);
+      const { startedImmediately } = musicManager.enqueueMany(interaction.guildId, tracksCopy);
 
       await interaction.editReply({
         embeds: [textEmbed(`Playlist **${name}** (${tracks.length} lagu) ditambahkan ke antrian.`)],
       });
+
+      if (startedImmediately) {
+        const { embed: npEmbed, components } = buildNowPlayingCard(interaction.guildId);
+        const npMessage = await interaction.channel.send({ embeds: [npEmbed], components });
+        musicManager.setNowPlayingMessage(interaction.guildId, interaction.channelId, npMessage.id);
+      }
       return;
     }
 
