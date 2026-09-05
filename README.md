@@ -18,6 +18,13 @@ Voice channel target (default): `1542046529299152938`
 - `/stop` — stop musik dan kosongkan antrian (bot balik ke silent audio, tetap standby di voice channel). Autoplay otomatis nggak lanjut kalau di-stop manual.
 - `/queue` — lihat lagu yang lagi diputar + antrian berikutnya + status autoplay
 - `/autoplay <on|off>` — kalau nyala, begitu antrian abis (bukan karena `/stop`), bot otomatis nyari & muterin lagu yang mirip dari lagu terakhir (pakai YouTube Mix), jadi musik nggak berhenti-berhenti. Kalau nggak ketemu lagu mirip / gagal, otomatis fallback ke silent audio biasa.
+- `/playlist save <nama> [dari_posisi]` — simpan antrian yang lagi jalan (lagu yang lagi main + semua yang ngantri) jadi playlist **milik kamu sendiri** (per-user, bukan shared 1 server). Opsi `dari_posisi` buat skip beberapa lagu awal (misal `dari_posisi:3` cuma nyimpen dari lagu ke-3 dan seterusnya). Simpan nama yang sama buat update/timpa playlist yang udah ada.
+- `/playlist add <nama> <links>` — tambahin lagu ke playlist langsung dari link YouTube/Spotify yang kamu paste (nggak perlu diputar dulu di antrian). Bisa beberapa link sekaligus, dipisah spasi atau baris baru (maks 15 link per command). Link playlist YouTube otomatis di-expand semua isinya. Bikin playlist baru kalau namanya belum ada, atau nambah ke yang udah ada.
+- `/playlist play <nama>` — tambahin semua lagu dari playlist tersimpan ke antrian (ada autocomplete pas ngetik nama)
+- `/playlist list` — lihat semua playlist kamu beserta jumlah lagu & total durasi
+- `/playlist delete <nama>` — hapus playlist (ada autocomplete)
+
+Batasan: maksimal 25 playlist per user, maksimal 100 lagu per playlist.
 
 ### Voice activity tracking
 - `/voicestats [user]` — lihat total waktu di voice channel, voice streak (hari berturut-turut aktif), streak terpanjang, dan achievement title. Default: diri sendiri.
