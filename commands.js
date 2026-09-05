@@ -105,14 +105,22 @@ const commands = [
       track.requestedBy = interaction.user.tag;
 
       musicManager.setTextChannel(interaction.guildId, interaction.channelId);
-      const { position, startedImmediately } = musicManager.enqueue(interaction.guildId, track);
+      const { position, startedImmediately, etaSeconds } = musicManager.enqueue(interaction.guildId, track);
 
       if (startedImmediately) {
         await interaction.editReply({ embeds: [textEmbed(`Started playing **${track.title}**`)] });
       } else {
-        await interaction.editReply({
-          embeds: [textEmbed(`**${track.title}** ditambahkan ke antrian (posisi #${position})`)],
-        });
+        const embed = new EmbedBuilder()
+          .setColor(COLOR)
+          .setDescription(`**${track.title}** ditambahkan ke antrian`)
+          .setThumbnail(track.thumbnail || null)
+          .addFields(
+            { name: 'Estimated time until played', value: formatEta(etaSeconds), inline: true },
+            { name: 'Track Length', value: track.durationText || '?', inline: true },
+            { name: 'Position in queue', value: `#${position}`, inline: true },
+            { name: 'Request by', value: track.requestedBy, inline: true }
+          );
+        await interaction.editReply({ embeds: [embed] });
       }
     },
   },
