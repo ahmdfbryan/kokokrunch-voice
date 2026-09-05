@@ -13,10 +13,11 @@ Voice channel target (default): `1542046529299152938`
 - Health check tiap 60 detik untuk mastiin bot masih ada di channel target
 
 ### Music player
-- `/play <input>` — terima link YouTube, link Spotify (track), atau kata kunci judul lagu. Kalau ada yang lagi diputar, ditambahin ke antrian; kalau kosong, langsung main.
+- `/play <input>` — terima link YouTube, link Spotify (track), link playlist YouTube, atau kata kunci judul lagu. Kalau ada yang lagi diputar, ditambahin ke antrian; kalau kosong, langsung main.
 - `/skip` — skip lagu yang lagi diputar, lanjut ke antrian berikutnya
-- `/stop` — stop musik dan kosongkan antrian (bot balik ke silent audio, tetap standby di voice channel)
-- `/queue` — lihat lagu yang lagi diputar + antrian berikutnya
+- `/stop` — stop musik dan kosongkan antrian (bot balik ke silent audio, tetap standby di voice channel). Autoplay otomatis nggak lanjut kalau di-stop manual.
+- `/queue` — lihat lagu yang lagi diputar + antrian berikutnya + status autoplay
+- `/autoplay <on|off>` — kalau nyala, begitu antrian abis (bukan karena `/stop`), bot otomatis nyari & muterin lagu yang mirip dari lagu terakhir (pakai YouTube Mix), jadi musik nggak berhenti-berhenti. Kalau nggak ketemu lagu mirip / gagal, otomatis fallback ke silent audio biasa.
 
 ### Voice activity tracking
 - `/voicestats [user]` — lihat total waktu di voice channel, voice streak (hari berturut-turut aktif), streak terpanjang, dan achievement title. Default: diri sendiri.
