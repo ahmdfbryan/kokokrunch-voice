@@ -1,6 +1,7 @@
 const { SlashCommandBuilder, EmbedBuilder } = require('discord.js');
 const musicManager = require('./musicManager');
 const { resolveTrack, isPlaylistUrl, resolvePlaylist } = require('./trackResolver');
+const { buildNowPlayingCard } = require('./nowPlayingCard');
 
 const COLOR = 0x5865f2;
 const PLAYLIST_MAX_TRACKS = 100;
@@ -69,7 +70,7 @@ const commands = [
         });
 
         musicManager.setTextChannel(interaction.guildId, interaction.channelId);
-        const { etaList } = musicManager.enqueueMany(interaction.guildId, tracks);
+        const { etaList, startedImmediately } = musicManager.enqueueMany(interaction.guildId, tracks);
 
         const totalSeconds = tracks.reduce((sum, t) => sum + (t.durationSeconds || 0), 0);
         const firstEtaSeconds = etaList[0]?.etaSeconds ?? 0;
@@ -90,6 +91,14 @@ const commands = [
               `Estimated time until played: ${formatEta(firstEtaSeconds)}`
           );
         await interaction.editReply({ embeds: [embed] });
+
+        // Kalau playlist ini langsung mulai main (antrian kosong sebelumnya),
+        // susulin dengan card "Now Playing" interaktif buat lagu pertamanya.
+        if (startedImmediately) {
+          const { embed: npEmbed, components } = buildNowPlayingCard(interaction.guildId);
+          const npMessage = await interaction.channel.send({ embeds: [npEmbed], components });
+          musicManager.setNowPlayingMessage(interaction.guildId, interaction.channelId, npMessage.id);
+        }
         return;
       }
 
@@ -108,7 +117,9 @@ const commands = [
       const { position, startedImmediately, etaSeconds } = musicManager.enqueue(interaction.guildId, track);
 
       if (startedImmediately) {
-        await interaction.editReply({ embeds: [textEmbed(`Started playing **${track.title}**`)] });
+        const { embed, components } = buildNowPlayingCard(interaction.guildId);
+        const sentMessage = await interaction.editReply({ embeds: [embed], components });
+        musicManager.setNowPlayingMessage(interaction.guildId, interaction.channelId, sentMessage.id);
       } else {
         const embed = new EmbedBuilder()
           .setColor(COLOR)
