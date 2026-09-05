@@ -153,10 +153,11 @@ const commands = [
     data: new SlashCommandBuilder().setName('queue').setDescription('Lihat antrian musik saat ini'),
     async execute(interaction) {
       const queue = musicManager.getQueue(interaction.guildId);
+      const autoplayStatus = queue.autoplayEnabled ? 'ON' : 'OFF';
 
       if (!queue.current && queue.tracks.length === 0) {
         await interaction.reply({
-          embeds: [textEmbed('Antrian kosong, nggak ada musik yang diputar.')],
+          embeds: [textEmbed(`Antrian kosong, nggak ada musik yang diputar.\n\nAutoplay: ${autoplayStatus}`)],
           ephemeral: true,
         });
         return;
@@ -167,7 +168,7 @@ const commands = [
       if (queue.current) {
         embed.addFields({
           name: 'Sedang Diputar',
-          value: `**${queue.current.title}** — diminta oleh ${queue.current.requestedBy}`,
+          value: `**${queue.current.title}**${queue.current.isAutoplay ? ' _(Autoplay)_' : ''} — diminta oleh ${queue.current.requestedBy}`,
         });
       }
 
@@ -180,7 +181,32 @@ const commands = [
         embed.addFields({ name: 'Berikutnya', value: list + extra });
       }
 
+      embed.addFields({ name: 'Autoplay', value: autoplayStatus, inline: true });
+
       await interaction.reply({ embeds: [embed] });
+    },
+  },
+
+  {
+    data: new SlashCommandBuilder()
+      .setName('autoplay')
+      .setDescription('Nyalain/matiin autoplay -- otomatis lanjut ke lagu mirip kalau antrian abis')
+      .addStringOption((opt) =>
+        opt
+          .setName('mode')
+          .setDescription('Nyalain atau matiin')
+          .setRequired(true)
+          .addChoices({ name: 'on', value: 'on' }, { name: 'off', value: 'off' })
+      ),
+    async execute(interaction) {
+      const mode = interaction.options.getString('mode', true);
+      const enabled = mode === 'on';
+      musicManager.setAutoplay(interaction.guildId, enabled);
+
+      const message = enabled
+        ? 'Autoplay dinyalakan. Kalau antrian abis, bot bakal otomatis lanjut ke lagu yang mirip.'
+        : 'Autoplay dimatikan.';
+      await interaction.reply({ embeds: [textEmbed(message)] });
     },
   },
 ];
