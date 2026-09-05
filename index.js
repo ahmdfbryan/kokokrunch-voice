@@ -65,7 +65,8 @@ async function onTrackStart(guildId, track, opts = {}) {
 
   try {
     const channel = await client.channels.fetch(queue.textChannelId);
-    const embed = new EmbedBuilder().setColor(EMBED_COLOR).setDescription(`Started playing **${track.title}**`);
+    const suffix = track.isAutoplay ? ' _(Autoplay)_' : '';
+    const embed = new EmbedBuilder().setColor(EMBED_COLOR).setDescription(`Started playing **${track.title}**${suffix}`);
     await channel.send({ embeds: [embed] });
   } catch (err) {
     log(`[STATUS] Gagal kirim notifikasi Now Playing ke channel: ${err.message}`);
@@ -88,11 +89,18 @@ async function onQueueEmpty(guildId, opts = {}) {
 
   try {
     const channel = await client.channels.fetch(queue.textChannelId);
-    const embed = new EmbedBuilder()
+    // Dipisah jadi 2 embed ditumpuk dalam 1 pesan -- soalnya gambar di
+    // dalam 1 embed SELALU nempatin diri di posisi paling bawah embed itu,
+    // jadi kalau mau ada teks normal (bukan footer kecil) di BAWAH gambar,
+    // harus pake embed kedua yang nempel di bawahnya.
+    const embedTop = new EmbedBuilder()
       .setColor(EMBED_COLOR)
-      .setDescription('Thank you for using our service Satpam Voice!\n\nYour suggestions and opinions are always considered!')
+      .setDescription('Thank you for using our service Satpam Voice!')
       .setImage(QUEUE_FINISHED_IMAGE_URL);
-    await channel.send({ embeds: [embed] });
+    const embedBottom = new EmbedBuilder()
+      .setColor(EMBED_COLOR)
+      .setDescription('Your suggestions and opinions are always considered!');
+    await channel.send({ embeds: [embedTop, embedBottom] });
   } catch (err) {
     log(`[STATUS] Gagal kirim notifikasi antrian selesai: ${err.message}`);
   }
