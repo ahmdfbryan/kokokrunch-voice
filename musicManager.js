@@ -1,6 +1,7 @@
 const { createAudioResource, StreamType } = require('@discordjs/voice');
 const { createSilentAudioStream } = require('./silentstream');
 const ytdlp = require('./ytdlp');
+const trackResolver = require('./trackResolver');
 
 // State antrian per guild. Bot ini didesain buat 1 guild/channel tetap,
 // tapi tetap di-map per guildId biar rapi & gampang diperluas nanti.
@@ -26,9 +27,30 @@ function init(audioPlayer, logger, callbacks = {}) {
 
 function getQueue(guildId) {
   if (!queues.has(guildId)) {
-    queues.set(guildId, { tracks: [], current: null, currentProcess: null, textChannelId: null });
+    queues.set(guildId, {
+      tracks: [],
+      current: null,
+      currentProcess: null,
+      textChannelId: null,
+      autoplayEnabled: false,
+      recentAutoplayUrls: [],
+    });
   }
   return queues.get(guildId);
+}
+
+/**
+ * Nyalain/matiin autoplay buat 1 guild. Kalau nyala, begitu antrian abis
+ * (bukan karena /stop), bot otomatis nyari & muterin lagu yang mirip dari
+ * lagu terakhir yang diputar, jadi musik nggak berhenti-berhenti.
+ */
+function setAutoplay(guildId, enabled) {
+  const queue = getQueue(guildId);
+  queue.autoplayEnabled = enabled;
+}
+
+function isAutoplayEnabled(guildId) {
+  return getQueue(guildId).autoplayEnabled === true;
 }
 
 /**
@@ -125,13 +147,20 @@ function playNext(guildId, options = {}) {
   );
 
   if (!next) {
+    const finishedTrack = queue.current; // track yang barusan abis, dipakai sebagai "biji" autoplay
     queue.current = null;
-    playSilence();
-    // Kalau ini dipicu dari /stop, suppressEmptyNotify udah di-set true
-    // (biar nggak dobel sama reply "Musik dihentikan" dari /stop sendiri).
-    const silent = queue.suppressEmptyNotify === true;
-    queue.suppressEmptyNotify = false;
-    if (onQueueEmpty) onQueueEmpty(guildId, { silent });
+
+    // Kalau dipicu dari /stop, suppressAutoplay & suppressEmptyNotify udah
+    // di-set true (biar nggak lanjut autoplay & nggak dobel notifikasi).
+    const skipAutoplay = queue.suppressAutoplay === true;
+    queue.suppressAutoplay = false;
+
+    if (queue.autoplayEnabled && !skipAutoplay && finishedTrack) {
+      tryAutoplay(guildId, finishedTrack);
+      return;
+    }
+
+    fallbackToSilence(guildId);
     return;
   }
 
@@ -162,6 +191,47 @@ function playSilence() {
 }
 
 /**
+ * Balik ke silent audio + kirim notifikasi antrian-abis (kecuali lagi
+ * di-suppress, misal dipicu dari /stop).
+ */
+function fallbackToSilence(guildId) {
+  const queue = getQueue(guildId);
+  playSilence();
+  const silent = queue.suppressEmptyNotify === true;
+  queue.suppressEmptyNotify = false;
+  if (onQueueEmpty) onQueueEmpty(guildId, { silent });
+}
+
+/**
+ * Coba cari & muterin 1 lagu yang mirip dari `seedTrack`. Kalau gagal
+ * (nggak ketemu, Mix error, dll), fallback ke silent audio kayak biasa.
+ */
+async function tryAutoplay(guildId, seedTrack) {
+  const queue = getQueue(guildId);
+  try {
+    const candidate = await trackResolver.getAutoplayTrack(seedTrack.url, queue.recentAutoplayUrls);
+    if (!candidate) {
+      log(`[MUSIC] Autoplay: nggak nemu lagu mirip buat "${seedTrack.title}", balik ke silent.`);
+      fallbackToSilence(guildId);
+      return;
+    }
+
+    candidate.requestedBy = 'Autoplay';
+    candidate.isAutoplay = true;
+
+    // Simpen histori kecil biar autoplay nggak muter-muter kepilih lagu yang sama
+    queue.recentAutoplayUrls = [...queue.recentAutoplayUrls, candidate.url].slice(-20);
+
+    queue.tracks.push(candidate);
+    log(`[MUSIC] Autoplay: nemu "${candidate.title}" (mirip dari "${seedTrack.title}")`);
+    playNext(guildId);
+  } catch (err) {
+    log(`[MUSIC] Autoplay gagal: ${err.message}, balik ke silent.`);
+    fallbackToSilence(guildId);
+  }
+}
+
+/**
  * Skip track yang lagi main. Return false kalau memang nggak ada yang main.
  * player.stop() akan trigger event 'Idle' di index.js, yang manggil
  * playNext() lagi -> otomatis lanjut ke track berikutnya atau silence.
@@ -183,6 +253,7 @@ function stop(guildId) {
   queue.tracks = [];
   if (queue.current) {
     queue.suppressEmptyNotify = true; // reply /stop sendiri udah kasih tau, jangan dobel
+    queue.suppressAutoplay = true; // /stop artinya user emang mau berhenti, jangan lanjut autoplay
     player.stop();
   }
   return hadSomething;
@@ -213,6 +284,8 @@ module.exports = {
   init,
   getQueue,
   setTextChannel,
+  setAutoplay,
+  isAutoplayEnabled,
   enqueue,
   enqueueMany,
   playNext,
