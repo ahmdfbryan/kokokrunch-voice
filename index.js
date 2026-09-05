@@ -17,7 +17,7 @@ const {
 const config = require('./config');
 const musicManager = require('./musicManager');
 const musicPlaylistStore = require('./musicPlaylistStore');
-const { buildNowPlayingCard } = require('./nowPlayingCard');
+const { buildNowPlayingCard, cycleLoopMode } = require('./nowPlayingCard');
 const voiceActivity = require('./voiceActivity');
 const stickyMessage = require('./stickyMessage');
 const stickyManager = require('./stickyManager');
@@ -65,23 +65,25 @@ async function onTrackStart(guildId, track, opts = {}) {
   const queue = musicManager.getQueue(guildId);
   if (!queue.textChannelId) return;
 
+  // Card "Now Playing" dibikin TETAP di posisi/pesan yang sama selama musik
+  // masih nyambung terus (edit di tempat pas ganti lagu) -- bukan dihapus &
+  // dikirim ulang tiap ganti lagu. Cuma bikin pesan baru kalau memang belum
+  // ada yang di-track, atau pesan lamanya udah nggak ketemu (kehapus manual dll).
+  const oldMsg = musicManager.getNowPlayingMessage(guildId);
+  if (oldMsg) {
+    try {
+      const oldChannel = await client.channels.fetch(oldMsg.channelId);
+      const oldMessage = await oldChannel.messages.fetch(oldMsg.messageId);
+      const { embed, components } = buildNowPlayingCard(guildId);
+      await oldMessage.edit({ embeds: [embed], components });
+      return;
+    } catch {
+      // Pesan lama nggak ketemu -> lanjut ke bawah, bikin pesan baru
+    }
+  }
+
   try {
     const channel = await client.channels.fetch(queue.textChannelId);
-
-    // Hapus card "Now Playing" lama (kalau ada), biar yang baru muncul di
-    // paling bawah chat -- sama kayak pola sticky message, bukan ngedit
-    // pesan lama yang mungkin udah ketinggalan jauh di atas.
-    const oldMsg = musicManager.getNowPlayingMessage(guildId);
-    if (oldMsg) {
-      try {
-        const oldChannel = await client.channels.fetch(oldMsg.channelId);
-        const oldMessage = await oldChannel.messages.fetch(oldMsg.messageId);
-        await oldMessage.delete();
-      } catch {
-        // udah kehapus manual / nggak ketemu, aman diabaikan
-      }
-    }
-
     const { embed, components } = buildNowPlayingCard(guildId);
     const sentMessage = await channel.send({ embeds: [embed], components });
     musicManager.setNowPlayingMessage(guildId, channel.id, sentMessage.id);
@@ -409,6 +411,12 @@ client.on('interactionCreate', async (interaction) => {
           await interaction.update({ embeds: [embed], components });
         } else if (interaction.customId === 'music_autoplay') {
           musicManager.setAutoplay(guildId, !musicManager.isAutoplayEnabled(guildId));
+          const { embed, components } = buildNowPlayingCard(guildId);
+          await interaction.update({ embeds: [embed], components });
+        } else if (interaction.customId === 'music_loop') {
+          const nextMode = cycleLoopMode(musicManager.getLoopMode(guildId));
+          musicManager.setLoopMode(guildId, nextMode);
+          // Sinkron juga (nggak lewat transisi Idle), aman di-render ulang sekarang juga.
           const { embed, components } = buildNowPlayingCard(guildId);
           await interaction.update({ embeds: [embed], components });
         } else if (interaction.customId === 'music_skip' || interaction.customId === 'music_stop') {
