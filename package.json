@@ -17,7 +17,6 @@
     "libsodium-wrappers": "^0.7.15",
     "node-fetch": "^2.7.0",
     "opusscript": "^0.1.1",
-    "spotify-url-info": "^3.3.3",
-    "youtube-sr": "^4.3.12"
+    "spotify-url-info": "^3.3.3"
   }
 }
