@@ -1,4 +1,3 @@
-const { YouTube } = require('youtube-sr');
 const fetch = require('node-fetch');
 const { getPreview } = require('spotify-url-info')(fetch);
 const ytdlp = require('./ytdlp');
@@ -12,23 +11,41 @@ const SPOTIFY_URL_REGEX = /^(https?:\/\/)?(open\.spotify\.com)\/.+$/i;
 const PLAYLIST_LIST_PARAM_REGEX = /[?&]list=([a-zA-Z0-9_-]+)/;
 const HAS_SPECIFIC_VIDEO_REGEX = /[?&]v=|youtu\.be\//i;
 
+// spotify-url-info nggak punya timeout bawaan -- kalau koneksi ke server
+// Spotify macet, request bisa nyangkut selamanya, bikin command /play
+// "stuck" sampai Discord nunjukkin "The application did not respond"
+// (soalnya deferReply udah kepanggil tapi editReply nggak pernah nyusul).
+function withTimeout(promise, ms, label) {
+  let timer;
+  const timeoutPromise = new Promise((_, reject) => {
+    timer = setTimeout(() => reject(new Error(`${label} tidak merespons dalam ${ms / 1000} detik.`)), ms);
+  });
+  return Promise.race([promise, timeoutPromise]).finally(() => clearTimeout(timer));
+}
+
 function isPlaylistUrl(url) {
   return PLAYLIST_LIST_PARAM_REGEX.test(url) && !HAS_SPECIFIC_VIDEO_REGEX.test(url);
 }
 
 /**
- * Cari 1 video YouTube paling relevan dari kata kunci teks.
+ * Cari 1 video YouTube paling relevan dari kata kunci teks. Pakai fitur
+ * search bawaan yt-dlp (pseudo-URL "ytsearch1:") -- bukan library scraping
+ * terpisah, biar konsisten sama cara kita ekstrak video/playlist lainnya
+ * dan nggak gampang rusak kalau YouTube ubah format halaman mereka.
  */
 async function searchYouTube(query) {
-  const result = await YouTube.searchOne(query, 'video', false);
-  if (!result) return null;
-  return {
-    title: result.title || query,
-    url: `https://www.youtube.com/watch?v=${result.id}`,
-    durationText: result.durationFormatted || null,
-    durationSeconds: result.duration ? Math.floor(result.duration / 1000) : null,
-    thumbnail: result.thumbnail?.url || null,
-  };
+  try {
+    return await ytdlp.getInfo(`ytsearch1:${query}`);
+  } catch (err) {
+    log_(`[SEARCH] Gagal cari "${query}": ${err.message}`);
+    return null;
+  }
+}
+
+// Logger sederhana, biar error pencarian kelihatan di pm2 logs tanpa perlu
+// nge-wire logger dari index.js ke modul ini.
+function log_(msg) {
+  console.log(`[${new Date().toISOString()}] ${msg}`);
 }
 
 /**
@@ -44,7 +61,7 @@ async function resolveYouTubeUrl(url) {
  * nyediain API buat streaming full-track audio).
  */
 async function resolveSpotifyUrl(url) {
-  const preview = await getPreview(url);
+  const preview = await withTimeout(getPreview(url), 15_000, 'Spotify');
   if (!preview || preview.type !== 'track') {
     throw new Error('Link Spotify ini bukan link lagu (track) tunggal. Album/playlist belum didukung.');
   }
