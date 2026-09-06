@@ -53,6 +53,23 @@ let currentGuildId = null;
 // update status "Now Playing" bot + kirim notifikasi ke channel tempat /play dipanggil.
 // opts.silent: true -> skip kirim pesan channel (reply command /play sendiri
 // sudah kasih tau), tapi status bot (Activity) tetap di-update seperti biasa.
+// Tiga proses beda bisa nyentuh "pesan Now Playing yang lagi ke-track" di
+// waktu yang hampir bersamaan: ganti lagu (onTrackStart), antrian abis
+// (onQueueEmpty/refresh), sama reposisi ke bawah pas ada chat baru. Kalau
+// dibiarin jalan bebarengan, bisa balapan baca/tulis referensi pesan yang
+// sama -> hasilnya card dobel/nyasar (satu proses nimpa hasil proses lain).
+// Kunci sederhana ini masukin semua operasi itu ke antrian, satu-satu per
+// guild, biar nggak pernah tabrakan.
+const npLockChains = new Map(); // guildId -> Promise
+function withNowPlayingLock(guildId, fn) {
+  const previous = npLockChains.get(guildId) || Promise.resolve();
+  const next = previous.then(fn, fn).catch((err) => {
+    log(`[NOWPLAYING] Error dalam operasi terkunci: ${err?.message || err}`);
+  });
+  npLockChains.set(guildId, next);
+  return next;
+}
+
 async function onTrackStart(guildId, track, opts = {}) {
   try {
     client.user.setActivity(track.title, { type: ActivityType.Listening });
@@ -65,31 +82,33 @@ async function onTrackStart(guildId, track, opts = {}) {
   const queue = musicManager.getQueue(guildId);
   if (!queue.textChannelId) return;
 
-  // Card "Now Playing" dibikin TETAP di posisi/pesan yang sama selama musik
-  // masih nyambung terus (edit di tempat pas ganti lagu) -- bukan dihapus &
-  // dikirim ulang tiap ganti lagu. Cuma bikin pesan baru kalau memang belum
-  // ada yang di-track, atau pesan lamanya udah nggak ketemu (kehapus manual dll).
-  const oldMsg = musicManager.getNowPlayingMessage(guildId);
-  if (oldMsg) {
-    try {
-      const oldChannel = await client.channels.fetch(oldMsg.channelId);
-      const oldMessage = await oldChannel.messages.fetch(oldMsg.messageId);
-      const { embed, components } = buildNowPlayingCard(guildId);
-      await oldMessage.edit({ embeds: [embed], components });
-      return;
-    } catch {
-      // Pesan lama nggak ketemu -> lanjut ke bawah, bikin pesan baru
+  await withNowPlayingLock(guildId, async () => {
+    // Card "Now Playing" dibikin TETAP di posisi/pesan yang sama selama musik
+    // masih nyambung terus (edit di tempat pas ganti lagu) -- bukan dihapus &
+    // dikirim ulang tiap ganti lagu. Cuma bikin pesan baru kalau memang belum
+    // ada yang di-track, atau pesan lamanya udah nggak ketemu (kehapus manual dll).
+    const oldMsg = musicManager.getNowPlayingMessage(guildId);
+    if (oldMsg) {
+      try {
+        const oldChannel = await client.channels.fetch(oldMsg.channelId);
+        const oldMessage = await oldChannel.messages.fetch(oldMsg.messageId);
+        const { embed, components } = buildNowPlayingCard(guildId);
+        await oldMessage.edit({ embeds: [embed], components });
+        return;
+      } catch {
+        // Pesan lama nggak ketemu -> lanjut ke bawah, bikin pesan baru
+      }
     }
-  }
 
-  try {
-    const channel = await client.channels.fetch(queue.textChannelId);
-    const { embed, components } = buildNowPlayingCard(guildId);
-    const sentMessage = await channel.send({ embeds: [embed], components });
-    musicManager.setNowPlayingMessage(guildId, channel.id, sentMessage.id);
-  } catch (err) {
-    log(`[STATUS] Gagal kirim card Now Playing ke channel: ${err.message}`);
-  }
+    try {
+      const channel = await client.channels.fetch(queue.textChannelId);
+      const { embed, components } = buildNowPlayingCard(guildId);
+      const sentMessage = await channel.send({ embeds: [embed], components });
+      musicManager.setNowPlayingMessage(guildId, channel.id, sentMessage.id);
+    } catch (err) {
+      log(`[STATUS] Gagal kirim card Now Playing ke channel: ${err.message}`);
+    }
+  });
 }
 
 // Callback pas antrian abis -- reset status bot balik netral + kasih tau di
@@ -101,7 +120,7 @@ async function onQueueEmpty(guildId, opts = {}) {
     log(`[STATUS] Gagal reset activity: ${err.message}`);
   }
 
-  refreshNowPlayingCard(guildId);
+  await refreshNowPlayingCard(guildId);
 
   if (opts.silent) return;
 
@@ -110,18 +129,13 @@ async function onQueueEmpty(guildId, opts = {}) {
 
   try {
     const channel = await client.channels.fetch(queue.textChannelId);
-    // Dipisah jadi 2 embed ditumpuk dalam 1 pesan -- soalnya gambar di
-    // dalam 1 embed SELALU nempatin diri di posisi paling bawah embed itu,
-    // jadi kalau mau ada teks normal (bukan footer kecil) di BAWAH gambar,
-    // harus pake embed kedua yang nempel di bawahnya.
-    const embedTop = new EmbedBuilder()
+    const embed = new EmbedBuilder()
       .setColor(EMBED_COLOR)
-      .setDescription('Thank you for using our service Satpam Voice!')
-      .setImage(QUEUE_FINISHED_IMAGE_URL);
-    const embedBottom = new EmbedBuilder()
-      .setColor(EMBED_COLOR)
-      .setDescription('Your suggestions and opinions are always considered!');
-    await channel.send({ embeds: [embedTop, embedBottom] });
+      .setDescription('Thank you for using our service **Satpam Voice**!')
+      .setImage(QUEUE_FINISHED_IMAGE_URL)
+      .setFooter({ text: 'Your suggestions and opinions are always considered!' })
+      .setTimestamp();
+    await channel.send({ embeds: [embed] });
   } catch (err) {
     log(`[STATUS] Gagal kirim notifikasi antrian selesai: ${err.message}`);
   }
@@ -135,24 +149,26 @@ async function onQueueEmpty(guildId, opts = {}) {
  * biar nggak terus-terusan dicoba di refresh berikutnya.
  */
 async function refreshNowPlayingCard(guildId) {
-  const npMsg = musicManager.getNowPlayingMessage(guildId);
-  if (!npMsg) return;
+  await withNowPlayingLock(guildId, async () => {
+    const npMsg = musicManager.getNowPlayingMessage(guildId);
+    if (!npMsg) return;
 
-  try {
-    const channel = await client.channels.fetch(npMsg.channelId);
-    const message = await channel.messages.fetch(npMsg.messageId);
-    const { embed, components } = buildNowPlayingCard(guildId);
-    await message.edit({ embeds: [embed], components });
+    try {
+      const channel = await client.channels.fetch(npMsg.channelId);
+      const message = await channel.messages.fetch(npMsg.messageId);
+      const { embed, components } = buildNowPlayingCard(guildId);
+      await message.edit({ embeds: [embed], components });
 
-    // Kalau udah nggak ada musik yang main, berarti card ini "final" --
-    // nggak perlu di-refresh berkala lagi sampai ada /nowplaying baru.
-    if (!musicManager.getQueue(guildId).current) {
+      // Kalau udah nggak ada musik yang main, berarti card ini "final" --
+      // nggak perlu di-refresh berkala lagi sampai ada /nowplaying baru.
+      if (!musicManager.getQueue(guildId).current) {
+        musicManager.setNowPlayingMessage(guildId, null, null);
+      }
+    } catch (err) {
+      log(`[NOWPLAYING] Gagal refresh card, berhenti nge-track pesan ini: ${err.message}`);
       musicManager.setNowPlayingMessage(guildId, null, null);
     }
-  } catch (err) {
-    log(`[NOWPLAYING] Gagal refresh card, berhenti nge-track pesan ini: ${err.message}`);
-    musicManager.setNowPlayingMessage(guildId, null, null);
-  }
+  });
 }
 
 // Card "Now Playing" dibuat "nempel" ke bawah chat kayak sticky message:
@@ -189,24 +205,27 @@ async function repositionNowPlayingCard(guildId) {
     npRepositionTimers.delete(guildId);
   }
 
-  const npMsg = musicManager.getNowPlayingMessage(guildId);
-  if (!npMsg) return;
-  if (!musicManager.getQueue(guildId).current) return; // nggak ada musik, nggak usah dipindah
-
   npRepositioningInFlight.add(guildId);
   try {
-    const channel = await client.channels.fetch(npMsg.channelId);
-    try {
-      const oldMessage = await channel.messages.fetch(npMsg.messageId);
-      await oldMessage.delete();
-    } catch {
-      // udah kehapus manual / nggak ketemu, aman diabaikan
-    }
-    const { embed, components } = buildNowPlayingCard(guildId);
-    const sentMessage = await channel.send({ embeds: [embed], components });
-    musicManager.setNowPlayingMessage(guildId, channel.id, sentMessage.id);
-  } catch (err) {
-    log(`[NOWPLAYING] Gagal reposisi card ke bawah: ${err.message}`);
+    await withNowPlayingLock(guildId, async () => {
+      // Dicek ULANG di dalam lock (bukan cuma sebelum antri) -- soalnya
+      // referensi pesan atau status musik bisa aja udah berubah selagi
+      // operasi lain di depan kita dalam antrian masih diproses.
+      const npMsg = musicManager.getNowPlayingMessage(guildId);
+      if (!npMsg) return;
+      if (!musicManager.getQueue(guildId).current) return; // nggak ada musik, nggak usah dipindah
+
+      const channel = await client.channels.fetch(npMsg.channelId);
+      try {
+        const oldMessage = await channel.messages.fetch(npMsg.messageId);
+        await oldMessage.delete();
+      } catch {
+        // udah kehapus manual / nggak ketemu, aman diabaikan
+      }
+      const { embed, components } = buildNowPlayingCard(guildId);
+      const sentMessage = await channel.send({ embeds: [embed], components });
+      musicManager.setNowPlayingMessage(guildId, channel.id, sentMessage.id);
+    });
   } finally {
     // Jeda dikit sebelum ngelepas flag -- ngasih waktu event messageCreate
     // buat pesan yang baru aja dikirim (yang bisa nyampe agak telat lewat
