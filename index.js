@@ -131,9 +131,10 @@ async function onQueueEmpty(guildId, opts = {}) {
     const channel = await client.channels.fetch(queue.textChannelId);
     const embed = new EmbedBuilder()
       .setColor(EMBED_COLOR)
+      .setAuthor({ name: '🎵 Satpam Voice' })
       .setDescription('Thank you for using our service **Satpam Voice**!')
       .setImage(QUEUE_FINISHED_IMAGE_URL)
-      .setFooter({ text: 'Your suggestions and opinions are always considered!' })
+      .setFooter({ text: 'Your suggestions and opinions are always considered! • Crafted by ahmdfbryan' })
       .setTimestamp();
     await channel.send({ embeds: [embed] });
   } catch (err) {
