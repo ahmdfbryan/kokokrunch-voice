@@ -50,7 +50,7 @@ function buildNowPlayingCard(guildId) {
       embed: new EmbedBuilder()
         .setColor(0x2b2d31)
         .setAuthor({ name: '🎵 Satpam Voice' })
-        .setDescription('Nggak ada musik yang lagi diputar.'),
+        .setDescription('No music is currently playing.'),
       components: [],
     };
   }
