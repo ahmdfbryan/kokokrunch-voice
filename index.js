@@ -25,6 +25,7 @@ const { handlePrefixCommand } = require('./prefixCommands');
 const giveawayManager = require('./giveawayManager');
 const aiChat = require('./aiChat');
 const aiTools = require('./aiTools');
+const permissions = require('./permissions');
 const commands = require('./commands');
 
 const EMBED_COLOR = 0x5865f2;
@@ -577,12 +578,28 @@ client.on('interactionCreate', async (interaction) => {
           const { embed, components } = buildNowPlayingCard(guildId);
           await interaction.update({ embeds: [embed], components });
         } else if (interaction.customId === 'music_skip') {
+          const queueForSkip = musicManager.getQueue(guildId);
+          if (!permissions.canControlPlayback(interaction.member, queueForSkip.current)) {
+            await interaction.reply({
+              content: 'Cuma yang minta lagu ini, owner, atau staff yang bisa skip.',
+              ephemeral: true,
+            });
+            return;
+          }
           // Transisinya ASYNC (lewat event 'Idle'), jadi nggak langsung
           // di-render ulang di sini -- nanti onTrackStart yang manggil
           // refreshNowPlayingCard() begitu transisinya kelar.
           musicManager.skip(guildId);
           await interaction.deferUpdate();
         } else if (interaction.customId === 'music_stop') {
+          const queueForStop = musicManager.getQueue(guildId);
+          if (!permissions.canControlPlayback(interaction.member, queueForStop.current)) {
+            await interaction.reply({
+              content: 'Cuma yang minta lagu ini, owner, atau staff yang bisa stop musik.',
+              ephemeral: true,
+            });
+            return;
+          }
           musicManager.stop(guildId);
           await interaction.deferUpdate();
           try {
