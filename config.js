@@ -15,6 +15,10 @@ module.exports = {
   voiceChannelId: process.env.VOICE_CHANNEL_ID,
   guildId: process.env.GUILD_ID || null,
   geminiApiKey: process.env.GEMINI_API_KEY,
+  // Role yang dianggap "Staff" -- boleh /stop dan /skip musik siapapun,
+  // bukan cuma yang minta lagunya sendiri. Bisa di-override lewat .env
+  // (STAFF_ROLE_ID) kalau server-nya beda/role-nya ganti nanti.
+  staffRoleId: process.env.STAFF_ROLE_ID || '1509608043393061065',
   // "gemini-flash-latest" adalah alias resmi Google yang otomatis nunjuk ke
   // versi Flash terbaru yang stabil -- sengaja TIDAK di-hardcode ke versi
   // spesifik (misal gemini-2.5-flash) karena Google rutin nge-retire versi
