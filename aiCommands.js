@@ -1,5 +1,6 @@
 const { SlashCommandBuilder, EmbedBuilder } = require('discord.js');
 const aiChat = require('./aiChat');
+const aiTools = require('./aiTools');
 const config = require('./config');
 
 const EMBED_COLOR = 0x5865f2;
@@ -25,8 +26,28 @@ const commands = [
       const question = interaction.options.getString('pertanyaan', true);
 
       try {
-        const answer = await aiChat.askOnce(question);
-        const embed = new EmbedBuilder().setColor(EMBED_COLOR).setDescription(answer.slice(0, MAX_EMBED_LEN));
+        const ctx = {
+          guildId: interaction.guildId,
+          channelId: interaction.channelId,
+          userId: interaction.user.id,
+          userTag: interaction.user.tag,
+          client: interaction.client,
+        };
+        const result = await aiChat.askOnce(question, ctx);
+
+        if (result.pendingConfirmation) {
+          const id = aiTools.createPendingConfirmation({
+            ...result.pendingConfirmation,
+            guildId: ctx.guildId,
+            channelId: ctx.channelId,
+            userId: ctx.userId,
+          });
+          const confirmMsg = aiTools.buildConfirmationMessage(id, result.pendingConfirmation.toolName, result.pendingConfirmation.args);
+          await interaction.editReply(confirmMsg);
+          return;
+        }
+
+        const embed = new EmbedBuilder().setColor(EMBED_COLOR).setDescription(result.text.slice(0, MAX_EMBED_LEN));
         await interaction.editReply({ embeds: [embed] });
       } catch (err) {
         await interaction.editReply(`Gagal minta jawaban dari AI: ${err.message}`);
