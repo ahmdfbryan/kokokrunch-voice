@@ -1,5 +1,6 @@
 const { GoogleGenAI } = require('@google/genai');
 const config = require('./config');
+const aiTools = require('./aiTools');
 
 // Timeout eksplisit buat tiap request ke Gemini API. Tanpa ini, kalau
 // koneksi ke server Gemini macet/nyangkut (bisa kejadian di VPS tertentu),
@@ -211,7 +212,13 @@ Prioritaskan:
 9. Tidak memaksakan slang atau emoji
 10. Terasa seperti percakapan manusia biasa
 
-Yang paling penting: jangan mencoba "terlihat manusia" dengan cara yang berlebihan. Tujuanmu adalah membuat percakapan terasa santai, spontan, dan nyaman.`;
+Yang paling penting: jangan mencoba "terlihat manusia" dengan cara yang berlebihan. Tujuanmu adalah membuat percakapan terasa santai, spontan, dan nyaman.
+
+## KEMAMPUAN KONTROL MUSIK
+
+Kamu punya akses ke tools buat beneran ngontrol musik yang lagi diputer di voice channel (play, skip, stop, pause, resume, atur volume, lihat antrian, simpen/muterin playlist). Kalau user minta hal-hal ini secara natural (misal "puterin lagu apa gitu", "skip dong", "kecilin suaranya"), langsung panggil tool yang sesuai -- jangan cuma ngejelasin caranya doang atau nyuruh mereka pakai slash command.
+
+Tetap balas dengan gaya ngobrol natural kamu setelah aksinya jalan (jangan cuma nge-print pesan sistem mentah). Kalau tool yang kamu panggil gagal atau butuh konfirmasi dulu dari user (bakal muncul tombol Confirm/Cancel otomatis), cukup kasih tau natural aja tanpa perlu dijelasin detail teknisnya.`;
 
 let log = console.log;
 function init(logger) {
@@ -323,24 +330,74 @@ async function callGeminiWithRetry(requestFn) {
 }
 
 /**
- * Tanya-jawab sekali, tanpa nyimpen konteks percakapan. Dipakai buat /ask.
+ * Proses response Gemini: kalau ada function call, cek dulu apakah aksinya
+ * "sensitif" (butuh konfirmasi user lewat tombol) atau aman buat langsung
+ * dieksekusi. Kalau dieksekusi, hasilnya dikirim BALIK ke Gemini biar
+ * balasannya kerasa natural (bukan cuma nge-print pesan template mentah).
+ * Kalau nggak ada function call sama sekali, balikin teksnya apa adanya.
  */
-async function askOnce(prompt) {
+async function handleFunctionCallOrText(response, historyForContext, ctx) {
+  const calls = response.functionCalls;
+  if (!calls || calls.length === 0) {
+    return { text: response.text || '(Gemini tidak memberikan balasan.)', pendingConfirmation: null };
+  }
+
+  const call = calls[0];
+  const args = call.args || {};
+
+  if (aiTools.isSensitive(call.name, args)) {
+    return { text: null, pendingConfirmation: { toolName: call.name, args } };
+  }
+
+  const result = await aiTools.executeTool(call.name, args, ctx);
+
+  const followUpContents = [
+    ...historyForContext,
+    { role: 'model', parts: [{ functionCall: call }] },
+    {
+      role: 'user',
+      parts: [{ functionResponse: { name: call.name, response: { success: result.success, result: result.message } } }],
+    },
+  ];
+
+  let followUpText = result.message;
+  try {
+    const followUp = await callGeminiWithRetry(() =>
+      ai.models.generateContent({
+        model: MODEL,
+        contents: followUpContents,
+        config: { systemInstruction: SYSTEM_PROMPT },
+      })
+    );
+    followUpText = followUp.text || result.message;
+  } catch (err) {
+    log(`[AI] Gagal ambil balasan natural setelah eksekusi tool, pakai pesan default: ${err.message}`);
+  }
+
+  return { text: followUpText, pendingConfirmation: null };
+}
+
+/**
+ * Tanya-jawab sekali, tanpa nyimpen konteks percakapan. Dipakai buat /ask.
+ * `ctx` = { guildId, channelId, userId, userTag, client } -- dibutuhin
+ * kalau AI-nya mutusin buat manggil salah satu tools (play musik dll).
+ */
+async function askOnce(prompt, ctx) {
   const response = await callGeminiWithRetry(() =>
     ai.models.generateContent({
       model: MODEL,
       contents: prompt,
-      config: { systemInstruction: SYSTEM_PROMPT },
+      config: { systemInstruction: SYSTEM_PROMPT, tools: [{ functionDeclarations: aiTools.TOOL_DECLARATIONS }] },
     })
   );
-  return response.text || '(Gemini tidak memberikan balasan.)';
+  return handleFunctionCallOrText(response, [{ role: 'user', parts: [{ text: prompt }] }], ctx);
 }
 
 /**
  * Chat multi-turn per user (inget percakapan sebelumnya). Dipakai buat
- * fitur mention-chat.
+ * fitur mention-chat. `ctx` sama kayak di askOnce.
  */
-async function chatReply(userId, message) {
+async function chatReply(userId, message, ctx) {
   const session = getSession(userId);
   session.history.push({ role: 'user', parts: [{ text: message }] });
 
@@ -348,15 +405,22 @@ async function chatReply(userId, message) {
     ai.models.generateContent({
       model: MODEL,
       contents: session.history,
-      config: { systemInstruction: SYSTEM_PROMPT },
+      config: { systemInstruction: SYSTEM_PROMPT, tools: [{ functionDeclarations: aiTools.TOOL_DECLARATIONS }] },
     })
   );
 
-  const replyText = response.text || '(Gemini tidak memberikan balasan.)';
-  session.history.push({ role: 'model', parts: [{ text: replyText }] });
+  const result = await handleFunctionCallOrText(response, session.history, ctx);
+
+  if (result.pendingConfirmation) {
+    // Belum ada balasan model buat disimpen -- nunggu user konfirmasi/batal
+    // dulu lewat tombol. Percakapan lanjut normal abis itu.
+    return result;
+  }
+
+  session.history.push({ role: 'model', parts: [{ text: result.text }] });
   trimHistory(session.history);
 
-  return replyText;
+  return result;
 }
 
 function resetSession(userId) {
