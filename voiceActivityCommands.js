@@ -1,4 +1,4 @@
-const { SlashCommandBuilder, EmbedBuilder } = require('discord.js');
+const { SlashCommandBuilder, EmbedBuilder, MessageFlags } = require('discord.js');
 const voiceActivity = require('./voiceActivity');
 
 const LEADERBOARD_COLOR = 0xf1c40f;
@@ -38,7 +38,7 @@ const commands = [
         const embed = new EmbedBuilder()
           .setColor(0x99aab5)
           .setDescription(`📭 ${who} belum pernah tercatat aktivitas voice-nya.`);
-        await interaction.reply({ embeds: [embed], ephemeral: true });
+        await interaction.reply({ embeds: [embed], flags: MessageFlags.Ephemeral });
         return;
       }
 
@@ -74,7 +74,7 @@ const commands = [
 
       if (top.length === 0) {
         const embed = new EmbedBuilder().setColor(0x99aab5).setDescription('📭 Belum ada data aktivitas voice sama sekali.');
-        await interaction.reply({ embeds: [embed], ephemeral: true });
+        await interaction.reply({ embeds: [embed], flags: MessageFlags.Ephemeral });
         return;
       }
 
