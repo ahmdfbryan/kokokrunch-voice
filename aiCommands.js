@@ -1,4 +1,4 @@
-const { SlashCommandBuilder, EmbedBuilder } = require('discord.js');
+const { SlashCommandBuilder, EmbedBuilder, MessageFlags } = require('discord.js');
 const aiChat = require('./aiChat');
 const aiTools = require('./aiTools');
 const config = require('./config');
@@ -17,7 +17,7 @@ const commands = [
       if (interaction.channelId !== config.voiceChannelId) {
         await interaction.reply({
           content: `Command ini cuma bisa dipakai di <#${config.voiceChannelId}>.`,
-          ephemeral: true,
+          flags: MessageFlags.Ephemeral,
         });
         return;
       }
