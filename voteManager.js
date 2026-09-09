@@ -5,7 +5,7 @@
 // nggak mencukupi. Cuma boleh ADA 1 sesi vote aktif per guild dalam waktu
 // bersamaan (skip dan stop nggak bisa jalan bareng).
 
-const { EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle } = require('discord.js');
+const { EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, MessageFlags } = require('discord.js');
 const config = require('./config');
 const permissions = require('./permissions');
 const musicManager = require('./musicManager');
@@ -104,18 +104,18 @@ async function castVote(interaction) {
   const guildId = interaction.guildId;
   const session = activeVotes.get(guildId);
   if (!session) {
-    await interaction.reply({ content: 'Vote ini udah kadaluarsa atau selesai.', ephemeral: true });
+    await interaction.reply({ content: 'Vote ini udah kadaluarsa atau selesai.', flags: MessageFlags.Ephemeral });
     return;
   }
 
   const members = getVoiceChannelMembers(interaction.guild);
   if (!members.some((m) => m.id === interaction.user.id)) {
-    await interaction.reply({ content: 'Kamu harus ada di voice channel buat ikut vote.', ephemeral: true });
+    await interaction.reply({ content: 'Kamu harus ada di voice channel buat ikut vote.', flags: MessageFlags.Ephemeral });
     return;
   }
 
   if (session.votes.has(interaction.user.id)) {
-    await interaction.reply({ content: 'Kamu udah vote buat ini.', ephemeral: true });
+    await interaction.reply({ content: 'Kamu udah vote buat ini.', flags: MessageFlags.Ephemeral });
     return;
   }
 
