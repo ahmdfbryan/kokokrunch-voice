@@ -112,6 +112,7 @@ async function executeTool(toolName, args, ctx) {
   const { resolveTrack, isPlaylistUrl, resolvePlaylist } = require('./trackResolver');
   const { claimNowPlayingCard } = require('./nowPlayingCard');
   const playlistStore = require('./musicPlaylistStore');
+  const permissions = require('./permissions');
 
   try {
     switch (toolName) {
@@ -125,6 +126,7 @@ async function executeTool(toolName, args, ctx) {
           const tracks = await resolvePlaylist(query, 100);
           tracks.forEach((t) => {
             t.requestedBy = userTag;
+            t.requestedById = userId;
           });
           const { startedImmediately } = musicManager.enqueueMany(guildId, tracks);
           if (startedImmediately) {
@@ -138,6 +140,7 @@ async function executeTool(toolName, args, ctx) {
 
         const track = await resolveTrack(query);
         track.requestedBy = userTag;
+        track.requestedById = userId;
         const { startedImmediately } = musicManager.enqueue(guildId, track);
         if (startedImmediately) {
           const channel = await client.channels.fetch(channelId);
@@ -152,12 +155,21 @@ async function executeTool(toolName, args, ctx) {
       case 'skip_track': {
         const queue = musicManager.getQueue(guildId);
         const skipped = queue.current;
+        const allowed = await permissions.canControlPlaybackByUserId(client, guildId, userId, skipped);
+        if (!allowed) {
+          return { success: false, message: 'User ini nggak punya izin buat skip lagu ini (bukan yang minta, owner, atau staff).' };
+        }
         const ok = musicManager.skip(guildId);
         if (!ok) return { success: false, message: 'Nggak ada lagu yang lagi diputar buat di-skip.' };
         return { success: true, message: `Lagu "${skipped.title}" di-skip.` };
       }
 
       case 'stop_music': {
+        const queue = musicManager.getQueue(guildId);
+        const allowed = await permissions.canControlPlaybackByUserId(client, guildId, userId, queue.current);
+        if (!allowed) {
+          return { success: false, message: 'User ini nggak punya izin buat stop musik ini (bukan yang minta, owner, atau staff).' };
+        }
         const had = musicManager.stop(guildId);
         return {
           success: had,
@@ -214,7 +226,7 @@ async function executeTool(toolName, args, ctx) {
         const tracks = playlistStore.getPlaylist(userId, name);
         if (!tracks || tracks.length === 0) return { success: false, message: `Playlist "${name}" nggak ketemu.` };
 
-        const tracksCopy = tracks.map((t) => ({ ...t, requestedBy: userTag }));
+        const tracksCopy = tracks.map((t) => ({ ...t, requestedBy: userTag, requestedById: userId }));
         musicManager.setTextChannel(guildId, channelId);
         const { startedImmediately } = musicManager.enqueueMany(guildId, tracksCopy);
         if (startedImmediately) {
