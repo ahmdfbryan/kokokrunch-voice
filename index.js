@@ -17,10 +17,11 @@ const {
 const config = require('./config');
 const musicManager = require('./musicManager');
 const musicPlaylistStore = require('./musicPlaylistStore');
-const { buildNowPlayingCard, cycleLoopMode } = require('./nowPlayingCard');
+const { buildNowPlayingCard, cycleLoopMode, withNowPlayingLock } = require('./nowPlayingCard');
 const voiceActivity = require('./voiceActivity');
 const stickyMessage = require('./stickyMessage');
 const stickyManager = require('./stickyManager');
+const { handlePrefixCommand } = require('./prefixCommands');
 const giveawayManager = require('./giveawayManager');
 const aiChat = require('./aiChat');
 const commands = require('./commands');
@@ -47,28 +48,19 @@ let player = null;
 let reconnecting = false;
 let shuttingDown = false;
 let consecutiveFailures = 0;
+let connectedAt = null; // timestamp (ms) pas terakhir kali berhasil Ready -- dipakai buat nentuin backoff
 let currentGuildId = null;
 
 // Callback dipanggil musicManager pas track baru mulai diputar --
 // update status "Now Playing" bot + kirim notifikasi ke channel tempat /play dipanggil.
 // opts.silent: true -> skip kirim pesan channel (reply command /play sendiri
 // sudah kasih tau), tapi status bot (Activity) tetap di-update seperti biasa.
-// Tiga proses beda bisa nyentuh "pesan Now Playing yang lagi ke-track" di
-// waktu yang hampir bersamaan: ganti lagu (onTrackStart), antrian abis
-// (onQueueEmpty/refresh), sama reposisi ke bawah pas ada chat baru. Kalau
-// dibiarin jalan bebarengan, bisa balapan baca/tulis referensi pesan yang
-// sama -> hasilnya card dobel/nyasar (satu proses nimpa hasil proses lain).
-// Kunci sederhana ini masukin semua operasi itu ke antrian, satu-satu per
-// guild, biar nggak pernah tabrakan.
-const npLockChains = new Map(); // guildId -> Promise
-function withNowPlayingLock(guildId, fn) {
-  const previous = npLockChains.get(guildId) || Promise.resolve();
-  const next = previous.then(fn, fn).catch((err) => {
-    log(`[NOWPLAYING] Error dalam operasi terkunci: ${err?.message || err}`);
-  });
-  npLockChains.set(guildId, next);
-  return next;
-}
+// Kunci `withNowPlayingLock` (di-import dari nowPlayingCard.js, dipakai
+// bareng-bareng sama commands.js dkk) masukin SEMUA operasi yang nyentuh
+// "pesan Now Playing yang lagi ke-track" ke antrian, satu-satu per guild --
+// baik yang dari proses background di sini (ganti lagu, refresh, reposisi)
+// maupun dari command (/play, /playlist play, /nowplaying) -- biar nggak
+// pernah ada 2 proses beda balapan bikin/nge-edit card yang sama.
 
 async function onTrackStart(guildId, track, opts = {}) {
   try {
@@ -250,6 +242,31 @@ function populateExistingVoiceSessions() {
   }
 }
 
+// Kalau bot ini restart (pm2 restart dll) SEMENTARA ada card "Now Playing"
+// yang lagi aktif, state di memori bakal ke-reset total -- card lama itu
+// jadi "yatim piatu" (nggak ada yang tau lagi harus di-edit yang mana),
+// biarin gitu bakal numpuk terus tiap kali restart. Dipanggil sekali pas
+// startup, sebelum musik mulai main lagi, buat bersihin card lama itu.
+let didCleanupOldNowPlayingCard = false;
+async function cleanupOldNowPlayingCard(guildId) {
+  if (didCleanupOldNowPlayingCard) return;
+  didCleanupOldNowPlayingCard = true;
+
+  const persisted = musicManager.loadPersistedNowPlayingMessages();
+  const old = persisted[guildId];
+  if (!old) return;
+
+  try {
+    const channel = await client.channels.fetch(old.channelId);
+    const message = await channel.messages.fetch(old.messageId);
+    await message.delete();
+    log('[NOWPLAYING] Card lama dari sebelum restart berhasil dibersihkan.');
+  } catch {
+    // udah kehapus manual / nggak ketemu, aman diabaikan
+  }
+  musicManager.setNowPlayingMessage(guildId, null, null);
+}
+
 function log(msg) {
   console.log(`[${new Date().toISOString()}] ${msg}`);
 }
@@ -334,6 +351,7 @@ async function connectToVoice() {
     player = createAudioPlayer();
     musicManager.init(player, log, { onTrackStart, onQueueEmpty });
     currentGuildId = channel.guild.id;
+    await cleanupOldNowPlayingCard(currentGuildId);
     musicManager.resyncAfterReconnect(currentGuildId);
     connection.subscribe(player);
 
@@ -364,13 +382,13 @@ async function connectToVoice() {
         } catch {
           // sudah destroyed
         }
-        scheduleReconnect();
+        handleConnectionDrop();
       }
     });
 
     connection.on(VoiceConnectionStatus.Destroyed, () => {
       log('Voice connection destroyed.');
-      scheduleReconnect();
+      handleConnectionDrop();
     });
 
     connection.on('stateChange', (oldSt, newSt) => {
@@ -379,22 +397,41 @@ async function connectToVoice() {
 
     await entersState(connection, VoiceConnectionStatus.Ready, 20_000);
     log(`Berhasil join voice channel: ${channel.name} (${channel.id})`);
-    consecutiveFailures = 0; // reset backoff setelah sukses
+    connectedAt = Date.now(); // dipakai handleConnectionDrop buat nentuin apakah ini koneksi yang "stabil"
   } catch (err) {
-    consecutiveFailures += 1;
-    log(`Gagal connect ke voice channel (percobaan ke-${consecutiveFailures}): ${err.message}`);
-    scheduleReconnect();
+    handleConnectionDrop(`Gagal connect ke voice channel: ${err.message}`);
   } finally {
     reconnecting = false;
   }
+}
+
+// Dipanggil tiap kali koneksi voice putus, entah gagal pas awal connect
+// ATAU putus abis sempet berhasil (event Disconnected/Destroyed). Cuma
+// reset backoff ke awal kalau koneksi SEBELUMNYA sempet stabil cukup lama
+// (>= STABLE_CONNECTION_MS) -- kalau baru aja connect terus langsung putus
+// lagi dalam hitungan detik (flapping), JANGAN direset, biar delay-nya terus
+// naik dan nggak hammering jaringan yang emang lagi nggak stabil.
+const STABLE_CONNECTION_MS = 30_000;
+function handleConnectionDrop(logMessage) {
+  const wasStable = connectedAt !== null && Date.now() - connectedAt >= STABLE_CONNECTION_MS;
+  connectedAt = null;
+
+  if (wasStable) {
+    consecutiveFailures = 0;
+  }
+  consecutiveFailures += 1;
+
+  if (logMessage) log(`${logMessage} (percobaan gagal beruntun: ${consecutiveFailures})`);
+  scheduleReconnect();
 }
 
 function scheduleReconnect() {
   if (shuttingDown) return; // jangan reconnect kalau memang lagi sengaja mati
 
   // Exponential backoff dengan cap 5 menit, supaya kalau memang lagi
-  // di-throttle/block Discord, kita nggak makin gencar hammering dan
-  // memperparah situasi. Attempt ke-1: 5s, ke-2: 10s, ke-3: 20s, ... maks 300s.
+  // di-throttle/block Discord atau jaringan lagi nggak stabil, kita nggak
+  // makin gencar hammering dan memperparah situasi. Attempt ke-1: 5s,
+  // ke-2: 10s, ke-3: 20s, ... maks 300s.
   const delay = Math.min(config.reconnectDelayMs * 2 ** Math.max(0, consecutiveFailures - 1), 300_000);
   log(`Mencoba reconnect dalam ${Math.round(delay / 1000)}s... (percobaan gagal beruntun: ${consecutiveFailures})`);
   setTimeout(() => {
@@ -427,8 +464,7 @@ client.on('voiceStateUpdate', (oldState, newState) => {
   if (oldState.member?.id !== client.user?.id) return;
   // Bot pindah channel atau keluar voice
   if (oldState.channelId === config.voiceChannelId && newState.channelId !== config.voiceChannelId) {
-    log('Bot terdeteksi keluar/dipindah dari voice channel target, rejoin...');
-    scheduleReconnect();
+    handleConnectionDrop('Bot terdeteksi keluar/dipindah dari voice channel target, rejoin...');
   }
 });
 
@@ -571,6 +607,13 @@ client.on('messageCreate', (message) => {
   if (!npMsg || npMsg.channelId !== message.channelId) return;
   if (message.id === npMsg.messageId) return;
   scheduleNowPlayingReposition(currentGuildId);
+});
+
+// Command berbasis prefix (s!play, s!skip, dll) -- lihat prefixCommands.js.
+// Dicek duluan sebelum listener AI chat, jadi kalau pesannya emang command
+// prefix, langsung diurus di sini dan nggak lanjut dianggap chat biasa.
+client.on('messageCreate', async (message) => {
+  await handlePrefixCommand(message, log);
 });
 
 // AI chat: mention bot di channel voice Satpam Voice buat ngobrol. Dibatasi
