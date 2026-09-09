@@ -213,7 +213,7 @@ const playlistCommand = {
       }
 
       await interaction.deferReply();
-      const tracksCopy = tracks.map((t) => ({ ...t, requestedBy: interaction.user.tag }));
+      const tracksCopy = tracks.map((t) => ({ ...t, requestedBy: interaction.user.tag, requestedById: interaction.user.id }));
       musicManager.setTextChannel(interaction.guildId, interaction.channelId);
       const { startedImmediately } = musicManager.enqueueMany(interaction.guildId, tracksCopy);
 
