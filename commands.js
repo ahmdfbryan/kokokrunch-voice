@@ -3,6 +3,7 @@ const musicManager = require('./musicManager');
 const { resolveTrack, isPlaylistUrl, resolvePlaylist } = require('./trackResolver');
 const { claimNowPlayingCard } = require('./nowPlayingCard');
 const permissions = require('./permissions');
+const voteManager = require('./voteManager');
 const { COLOR, textEmbed, formatEta, formatTotalDuration } = require('./musicFormat');
 
 const PLAYLIST_MAX_TRACKS = 100;
@@ -112,7 +113,19 @@ const commands = [
       const queue = musicManager.getQueue(interaction.guildId);
       const skippedTrack = queue.current;
 
-      if (!permissions.canControlPlayback(interaction.member, skippedTrack)) {
+      if (permissions.canControlPlayback(interaction.member, skippedTrack)) {
+        const skipped = musicManager.skip(interaction.guildId);
+        if (!skipped) {
+          await interaction.reply({ embeds: [textEmbed('Nggak ada lagu yang lagi diputar.')], ephemeral: true });
+          return;
+        }
+        await interaction.reply({
+          embeds: [textEmbed(`**${skippedTrack.title}** has been skipped by <@${interaction.user.id}>`)],
+        });
+        return;
+      }
+
+      if (voteManager.isAuthorityPresent(interaction.guild, skippedTrack)) {
         await interaction.reply({
           embeds: [textEmbed('Cuma yang minta lagu ini, owner, atau staff yang bisa skip.')],
           ephemeral: true,
@@ -120,13 +133,16 @@ const commands = [
         return;
       }
 
-      const skipped = musicManager.skip(interaction.guildId);
-      if (!skipped) {
-        await interaction.reply({ embeds: [textEmbed('Nggak ada lagu yang lagi diputar.')], ephemeral: true });
-        return;
-      }
-      await interaction.reply({
-        embeds: [textEmbed(`**${skippedTrack.title}** has been skipped by <@${interaction.user.id}>`)],
+      await interaction.deferReply();
+      await voteManager.handleVoteRequest({
+        guild: interaction.guild,
+        member: interaction.member,
+        channelId: interaction.channelId,
+        action: 'skip',
+        currentTrack: skippedTrack,
+        client: interaction.client,
+        sendPublic: (payload) => interaction.editReply(payload),
+        replyPrivate: (text) => interaction.editReply({ embeds: [textEmbed(text)] }),
       });
     },
   },
@@ -136,7 +152,20 @@ const commands = [
     async execute(interaction) {
       const queue = musicManager.getQueue(interaction.guildId);
 
-      if (!permissions.canControlPlayback(interaction.member, queue.current)) {
+      if (permissions.canControlPlayback(interaction.member, queue.current)) {
+        const hadSomething = musicManager.stop(interaction.guildId);
+        if (!hadSomething) {
+          await interaction.reply({
+            embeds: [textEmbed('Nggak ada musik yang lagi diputar atau diantrikan.')],
+            ephemeral: true,
+          });
+          return;
+        }
+        await interaction.reply({ embeds: [textEmbed('Musik dihentikan, antrian dikosongkan.')] });
+        return;
+      }
+
+      if (voteManager.isAuthorityPresent(interaction.guild, queue.current)) {
         await interaction.reply({
           embeds: [textEmbed('Cuma yang minta lagu ini, owner, atau staff yang bisa stop musik.')],
           ephemeral: true,
@@ -144,15 +173,17 @@ const commands = [
         return;
       }
 
-      const hadSomething = musicManager.stop(interaction.guildId);
-      if (!hadSomething) {
-        await interaction.reply({
-          embeds: [textEmbed('Nggak ada musik yang lagi diputar atau diantrikan.')],
-          ephemeral: true,
-        });
-        return;
-      }
-      await interaction.reply({ embeds: [textEmbed('Musik dihentikan, antrian dikosongkan.')] });
+      await interaction.deferReply();
+      await voteManager.handleVoteRequest({
+        guild: interaction.guild,
+        member: interaction.member,
+        channelId: interaction.channelId,
+        action: 'stop',
+        currentTrack: queue.current,
+        client: interaction.client,
+        sendPublic: (payload) => interaction.editReply(payload),
+        replyPrivate: (text) => interaction.editReply({ embeds: [textEmbed(text)] }),
+      });
     },
   },
 
