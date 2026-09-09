@@ -26,6 +26,7 @@ const giveawayManager = require('./giveawayManager');
 const aiChat = require('./aiChat');
 const aiTools = require('./aiTools');
 const permissions = require('./permissions');
+const voteManager = require('./voteManager');
 const commands = require('./commands');
 
 const EMBED_COLOR = 0x5865f2;
@@ -510,6 +511,15 @@ client.on('interactionCreate', async (interaction) => {
         await giveawayManager.refreshParticipantCount(interaction.client, interaction.message.id);
       } catch (err) {
         log(`[GIVEAWAY] Error tombol join: ${err?.stack || err}`);
+      }
+      return;
+    }
+
+    if (interaction.customId === 'vote_cast') {
+      try {
+        await voteManager.castVote(interaction);
+      } catch (err) {
+        log(`[VOTE] Error tombol vote: ${err?.stack || err}`);
       }
       return;
     }
