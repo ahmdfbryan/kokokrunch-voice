@@ -1,44 +1,11 @@
 const { SlashCommandBuilder, EmbedBuilder } = require('discord.js');
 const musicManager = require('./musicManager');
 const { resolveTrack, isPlaylistUrl, resolvePlaylist } = require('./trackResolver');
-const { buildNowPlayingCard } = require('./nowPlayingCard');
+const { claimNowPlayingCard } = require('./nowPlayingCard');
+const { COLOR, textEmbed, formatEta, formatTotalDuration } = require('./musicFormat');
 
-const COLOR = 0x5865f2;
 const PLAYLIST_MAX_TRACKS = 100;
 const PLAYLIST_PREVIEW_COUNT = 10;
-
-/**
- * Bikin embed teks polos: cuma garis + background biru di kiri, tanpa
- * judul/thumbnail/footer. Dipakai buat semua pesan singkat bot.
- */
-function textEmbed(text) {
-  return new EmbedBuilder().setColor(COLOR).setDescription(text);
-}
-
-/**
- * Format detik jadi teks panjang gampang dibaca, misal "1 jam 5 menit"
- * atau "Sekarang" buat ETA 0.
- */
-function formatEta(totalSeconds) {
-  if (totalSeconds <= 0) return 'Sekarang';
-  const h = Math.floor(totalSeconds / 3600);
-  const m = Math.floor((totalSeconds % 3600) / 60);
-  const s = Math.floor(totalSeconds % 60);
-  const parts = [];
-  if (h > 0) parts.push(`${h} jam`);
-  if (m > 0) parts.push(`${m} menit`);
-  if (h === 0 && m === 0) parts.push(`${s} detik`);
-  return parts.join(' ');
-}
-
-function formatTotalDuration(totalSeconds) {
-  const h = Math.floor(totalSeconds / 3600);
-  const m = Math.floor((totalSeconds % 3600) / 60);
-  const parts = [];
-  if (h > 0) parts.push(`${h} jam`);
-  parts.push(`${m} menit`);
-  return parts.join(' ');
-}
 
 const commands = [
   {
@@ -95,9 +62,9 @@ const commands = [
         // Kalau playlist ini langsung mulai main (antrian kosong sebelumnya),
         // susulin dengan card "Now Playing" interaktif buat lagu pertamanya.
         if (startedImmediately) {
-          const { embed: npEmbed, components } = buildNowPlayingCard(interaction.guildId);
-          const npMessage = await interaction.channel.send({ embeds: [npEmbed], components });
-          musicManager.setNowPlayingMessage(interaction.guildId, interaction.channelId, npMessage.id);
+          await claimNowPlayingCard(interaction.guildId, interaction.client, (embed, components) =>
+            interaction.channel.send({ embeds: [embed], components })
+          );
         }
         return;
       }
@@ -117,9 +84,9 @@ const commands = [
       const { position, startedImmediately, etaSeconds } = musicManager.enqueue(interaction.guildId, track);
 
       if (startedImmediately) {
-        const { embed, components } = buildNowPlayingCard(interaction.guildId);
-        const sentMessage = await interaction.editReply({ embeds: [embed], components });
-        musicManager.setNowPlayingMessage(interaction.guildId, interaction.channelId, sentMessage.id);
+        await claimNowPlayingCard(interaction.guildId, interaction.client, (embed, components) =>
+          interaction.editReply({ embeds: [embed], components })
+        );
       } else {
         const embed = new EmbedBuilder()
           .setColor(COLOR)
