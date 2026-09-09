@@ -1,4 +1,4 @@
-const { SlashCommandBuilder, EmbedBuilder } = require('discord.js');
+const { SlashCommandBuilder, EmbedBuilder, MessageFlags } = require('discord.js');
 const musicManager = require('./musicManager');
 const playlistStore = require('./musicPlaylistStore');
 const trackResolver = require('./trackResolver');
@@ -96,7 +96,7 @@ const playlistCommand = {
     if (sub === 'save') {
       const name = normalizeName(interaction.options.getString('nama', true));
       if (!name) {
-        await interaction.reply({ embeds: [textEmbed('Nama playlist nggak boleh kosong.')], ephemeral: true });
+        await interaction.reply({ embeds: [textEmbed('Nama playlist nggak boleh kosong.')], flags: MessageFlags.Ephemeral });
         return;
       }
 
@@ -108,7 +108,7 @@ const playlistCommand = {
         if (fromPosition > tracks.length) {
           await interaction.reply({
             embeds: [textEmbed(`Posisi ${fromPosition} nggak valid -- antrian cuma ada ${tracks.length} lagu.`)],
-            ephemeral: true,
+            flags: MessageFlags.Ephemeral,
           });
           return;
         }
@@ -118,7 +118,7 @@ const playlistCommand = {
       if (tracks.length === 0) {
         await interaction.reply({
           embeds: [textEmbed('Nggak ada musik yang lagi diputar/diantrikan buat disimpan.')],
-          ephemeral: true,
+          flags: MessageFlags.Ephemeral,
         });
         return;
       }
@@ -127,7 +127,7 @@ const playlistCommand = {
       try {
         result = playlistStore.savePlaylist(interaction.user.id, name, tracks);
       } catch (err) {
-        await interaction.reply({ embeds: [textEmbed(err.message)], ephemeral: true });
+        await interaction.reply({ embeds: [textEmbed(err.message)], flags: MessageFlags.Ephemeral });
         return;
       }
 
@@ -143,7 +143,7 @@ const playlistCommand = {
     if (sub === 'add') {
       const name = normalizeName(interaction.options.getString('nama', true));
       if (!name) {
-        await interaction.reply({ embeds: [textEmbed('Nama playlist nggak boleh kosong.')], ephemeral: true });
+        await interaction.reply({ embeds: [textEmbed('Nama playlist nggak boleh kosong.')], flags: MessageFlags.Ephemeral });
         return;
       }
 
@@ -158,7 +158,7 @@ const playlistCommand = {
       ].slice(0, MAX_LINKS_PER_ADD);
 
       if (tokens.length === 0) {
-        await interaction.reply({ embeds: [textEmbed('Nggak ada link yang valid.')], ephemeral: true });
+        await interaction.reply({ embeds: [textEmbed('Nggak ada link yang valid.')], flags: MessageFlags.Ephemeral });
         return;
       }
 
@@ -208,7 +208,7 @@ const playlistCommand = {
       const name = interaction.options.getString('nama', true);
       const tracks = playlistStore.getPlaylist(interaction.user.id, name);
       if (!tracks || tracks.length === 0) {
-        await interaction.reply({ embeds: [textEmbed(`Playlist **${name}** nggak ketemu.`)], ephemeral: true });
+        await interaction.reply({ embeds: [textEmbed(`Playlist **${name}** nggak ketemu.`)], flags: MessageFlags.Ephemeral });
         return;
       }
 
@@ -232,14 +232,14 @@ const playlistCommand = {
     if (sub === 'list') {
       const playlists = playlistStore.listPlaylists(interaction.user.id);
       if (playlists.length === 0) {
-        await interaction.reply({ embeds: [textEmbed('Kamu belum punya playlist tersimpan.')], ephemeral: true });
+        await interaction.reply({ embeds: [textEmbed('Kamu belum punya playlist tersimpan.')], flags: MessageFlags.Ephemeral });
         return;
       }
       const lines = playlists.map(
         (p, i) => `${i + 1}. **${p.name}** — ${p.trackCount} lagu (${formatDurationLong(p.totalSeconds)})`
       );
       const embed = new EmbedBuilder().setColor(COLOR).setTitle('Playlist Kamu').setDescription(lines.join('\n'));
-      await interaction.reply({ embeds: [embed], ephemeral: true });
+      await interaction.reply({ embeds: [embed], flags: MessageFlags.Ephemeral });
       return;
     }
 
@@ -247,10 +247,10 @@ const playlistCommand = {
       const name = interaction.options.getString('nama', true);
       const deleted = playlistStore.deletePlaylist(interaction.user.id, name);
       if (!deleted) {
-        await interaction.reply({ embeds: [textEmbed(`Playlist **${name}** nggak ketemu.`)], ephemeral: true });
+        await interaction.reply({ embeds: [textEmbed(`Playlist **${name}** nggak ketemu.`)], flags: MessageFlags.Ephemeral });
         return;
       }
-      await interaction.reply({ embeds: [textEmbed(`Playlist **${name}** dihapus.`)], ephemeral: true });
+      await interaction.reply({ embeds: [textEmbed(`Playlist **${name}** dihapus.`)], flags: MessageFlags.Ephemeral });
       return;
     }
   },
