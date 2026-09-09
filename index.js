@@ -5,7 +5,7 @@ const dns = require('dns');
 // Paksa resolusi DNS IPv4 dulu supaya voice connection nggak nyangkut di IPv6 yang mati.
 dns.setDefaultResultOrder('ipv4first');
 
-const { Client, GatewayIntentBits, ActivityType, EmbedBuilder } = require('discord.js');
+const { Client, GatewayIntentBits, ActivityType, EmbedBuilder, MessageFlags } = require('discord.js');
 const {
   joinVoiceChannel,
   createAudioPlayer,
@@ -499,14 +499,14 @@ client.on('interactionCreate', async (interaction) => {
       try {
         const result = await giveawayManager.toggleParticipant(interaction.message.id, interaction.user.id);
         if (!result.ok) {
-          await interaction.reply({ content: 'Giveaway ini sudah berakhir atau tidak ditemukan.', ephemeral: true });
+          await interaction.reply({ content: 'Giveaway ini sudah berakhir atau tidak ditemukan.', flags: MessageFlags.Ephemeral });
           return;
         }
         await interaction.reply({
           content: result.joined
             ? 'Kamu berhasil ikut giveaway ini. Klik lagi tombolnya kalau mau membatalkan.'
             : 'Kamu keluar dari giveaway ini.',
-          ephemeral: true,
+          flags: MessageFlags.Ephemeral,
         });
         await giveawayManager.refreshParticipantCount(interaction.client, interaction.message.id);
       } catch (err) {
@@ -536,7 +536,7 @@ client.on('interactionCreate', async (interaction) => {
         return;
       }
       if (interaction.user.id !== pending.userId) {
-        await interaction.reply({ content: 'Cuma yang minta aksi ini yang bisa konfirmasi/batal.', ephemeral: true });
+        await interaction.reply({ content: 'Cuma yang minta aksi ini yang bisa konfirmasi/batal.', flags: MessageFlags.Ephemeral });
         return;
       }
 
@@ -592,7 +592,7 @@ client.on('interactionCreate', async (interaction) => {
           if (!permissions.canControlPlayback(interaction.member, queueForSkip.current)) {
             await interaction.reply({
               content: 'Cuma yang minta lagu ini, owner, atau staff yang bisa skip.',
-              ephemeral: true,
+              flags: MessageFlags.Ephemeral,
             });
             return;
           }
@@ -606,7 +606,7 @@ client.on('interactionCreate', async (interaction) => {
           if (!permissions.canControlPlayback(interaction.member, queueForStop.current)) {
             await interaction.reply({
               content: 'Cuma yang minta lagu ini, owner, atau staff yang bisa stop musik.',
-              ephemeral: true,
+              flags: MessageFlags.Ephemeral,
             });
             return;
           }
@@ -652,7 +652,7 @@ client.on('interactionCreate', async (interaction) => {
     if (interaction.deferred || interaction.replied) {
       await interaction.editReply({ embeds: [errorEmbed] }).catch(() => {});
     } else {
-      await interaction.reply({ embeds: [errorEmbed], ephemeral: true }).catch(() => {});
+      await interaction.reply({ embeds: [errorEmbed], flags: MessageFlags.Ephemeral }).catch(() => {});
     }
   }
 });
