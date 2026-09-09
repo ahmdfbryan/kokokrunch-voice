@@ -2,6 +2,7 @@ const { SlashCommandBuilder, EmbedBuilder } = require('discord.js');
 const musicManager = require('./musicManager');
 const { resolveTrack, isPlaylistUrl, resolvePlaylist } = require('./trackResolver');
 const { claimNowPlayingCard } = require('./nowPlayingCard');
+const permissions = require('./permissions');
 const { COLOR, textEmbed, formatEta, formatTotalDuration } = require('./musicFormat');
 
 const PLAYLIST_MAX_TRACKS = 100;
@@ -34,6 +35,7 @@ const commands = [
 
         tracks.forEach((t) => {
           t.requestedBy = interaction.user.tag;
+          t.requestedById = interaction.user.id;
         });
 
         musicManager.setTextChannel(interaction.guildId, interaction.channelId);
@@ -79,6 +81,7 @@ const commands = [
       }
 
       track.requestedBy = interaction.user.tag;
+      track.requestedById = interaction.user.id;
 
       musicManager.setTextChannel(interaction.guildId, interaction.channelId);
       const { position, startedImmediately, etaSeconds } = musicManager.enqueue(interaction.guildId, track);
@@ -109,6 +112,14 @@ const commands = [
       const queue = musicManager.getQueue(interaction.guildId);
       const skippedTrack = queue.current;
 
+      if (!permissions.canControlPlayback(interaction.member, skippedTrack)) {
+        await interaction.reply({
+          embeds: [textEmbed('Cuma yang minta lagu ini, owner, atau staff yang bisa skip.')],
+          ephemeral: true,
+        });
+        return;
+      }
+
       const skipped = musicManager.skip(interaction.guildId);
       if (!skipped) {
         await interaction.reply({ embeds: [textEmbed('Nggak ada lagu yang lagi diputar.')], ephemeral: true });
@@ -123,6 +134,16 @@ const commands = [
   {
     data: new SlashCommandBuilder().setName('stop').setDescription('Stop musik dan kosongkan antrian'),
     async execute(interaction) {
+      const queue = musicManager.getQueue(interaction.guildId);
+
+      if (!permissions.canControlPlayback(interaction.member, queue.current)) {
+        await interaction.reply({
+          embeds: [textEmbed('Cuma yang minta lagu ini, owner, atau staff yang bisa stop musik.')],
+          ephemeral: true,
+        });
+        return;
+      }
+
       const hadSomething = musicManager.stop(interaction.guildId);
       if (!hadSomething) {
         await interaction.reply({
