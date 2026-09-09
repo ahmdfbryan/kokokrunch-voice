@@ -1,4 +1,4 @@
-const { SlashCommandBuilder, EmbedBuilder } = require('discord.js');
+const { SlashCommandBuilder, EmbedBuilder, MessageFlags } = require('discord.js');
 const musicManager = require('./musicManager');
 const { resolveTrack, isPlaylistUrl, resolvePlaylist } = require('./trackResolver');
 const { claimNowPlayingCard } = require('./nowPlayingCard');
@@ -116,7 +116,7 @@ const commands = [
       if (permissions.canControlPlayback(interaction.member, skippedTrack)) {
         const skipped = musicManager.skip(interaction.guildId);
         if (!skipped) {
-          await interaction.reply({ embeds: [textEmbed('Nggak ada lagu yang lagi diputar.')], ephemeral: true });
+          await interaction.reply({ embeds: [textEmbed('Nggak ada lagu yang lagi diputar.')], flags: MessageFlags.Ephemeral });
           return;
         }
         await interaction.reply({
@@ -128,7 +128,7 @@ const commands = [
       if (voteManager.isAuthorityPresent(interaction.guild, skippedTrack)) {
         await interaction.reply({
           embeds: [textEmbed('Cuma yang minta lagu ini, owner, atau staff yang bisa skip.')],
-          ephemeral: true,
+          flags: MessageFlags.Ephemeral,
         });
         return;
       }
@@ -157,7 +157,7 @@ const commands = [
         if (!hadSomething) {
           await interaction.reply({
             embeds: [textEmbed('Nggak ada musik yang lagi diputar atau diantrikan.')],
-            ephemeral: true,
+            flags: MessageFlags.Ephemeral,
           });
           return;
         }
@@ -168,7 +168,7 @@ const commands = [
       if (voteManager.isAuthorityPresent(interaction.guild, queue.current)) {
         await interaction.reply({
           embeds: [textEmbed('Cuma yang minta lagu ini, owner, atau staff yang bisa stop musik.')],
-          ephemeral: true,
+          flags: MessageFlags.Ephemeral,
         });
         return;
       }
@@ -196,7 +196,7 @@ const commands = [
       if (!queue.current && queue.tracks.length === 0) {
         await interaction.reply({
           embeds: [textEmbed(`Antrian kosong, nggak ada musik yang diputar.\n\nAutoplay: ${autoplayStatus}`)],
-          ephemeral: true,
+          flags: MessageFlags.Ephemeral,
         });
         return;
       }
@@ -252,7 +252,7 @@ const commands = [
       const ok = musicManager.pause(interaction.guildId);
       await interaction.reply({
         embeds: [textEmbed(ok ? 'Musik dijeda.' : 'Nggak ada musik yang lagi diputar.')],
-        ephemeral: !ok,
+        flags: ok ? undefined : MessageFlags.Ephemeral,
       });
     },
   },
@@ -263,7 +263,7 @@ const commands = [
       const ok = musicManager.resume(interaction.guildId);
       await interaction.reply({
         embeds: [textEmbed(ok ? 'Musik dilanjutkan.' : 'Nggak ada musik yang lagi diputar.')],
-        ephemeral: !ok,
+        flags: ok ? undefined : MessageFlags.Ephemeral,
       });
     },
   },
