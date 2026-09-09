@@ -3,6 +3,7 @@ const musicManager = require('./musicManager');
 const { resolveTrack, isPlaylistUrl, resolvePlaylist } = require('./trackResolver');
 const { buildNowPlayingCard, claimNowPlayingCard } = require('./nowPlayingCard');
 const playlistStore = require('./musicPlaylistStore');
+const permissions = require('./permissions');
 const { COLOR, textEmbed, formatEta, formatTotalDuration } = require('./musicFormat');
 
 const PREFIX = 's!';
@@ -47,6 +48,7 @@ async function cmdPlay(message, rest) {
     }
     tracks.forEach((t) => {
       t.requestedBy = message.author.tag;
+      t.requestedById = message.author.id;
     });
 
     musicManager.setTextChannel(guildId, message.channel.id);
@@ -88,6 +90,7 @@ async function cmdPlay(message, rest) {
   }
 
   track.requestedBy = message.author.tag;
+  track.requestedById = message.author.id;
   musicManager.setTextChannel(guildId, message.channel.id);
   const { position, startedImmediately, etaSeconds } = musicManager.enqueue(guildId, track);
 
@@ -115,6 +118,11 @@ async function cmdSkip(message) {
   const queue = musicManager.getQueue(guildId);
   const skippedTrack = queue.current;
 
+  if (!permissions.canControlPlayback(message.member, skippedTrack)) {
+    await message.channel.send({ embeds: [textEmbed('Cuma yang minta lagu ini, owner, atau staff yang bisa skip.')] });
+    return;
+  }
+
   const skipped = musicManager.skip(guildId);
   if (!skipped) {
     await message.channel.send({ embeds: [textEmbed('Nggak ada lagu yang lagi diputar.')] });
@@ -127,6 +135,13 @@ async function cmdSkip(message) {
 
 async function cmdStop(message) {
   const guildId = message.guild.id;
+  const queue = musicManager.getQueue(guildId);
+
+  if (!permissions.canControlPlayback(message.member, queue.current)) {
+    await message.channel.send({ embeds: [textEmbed('Cuma yang minta lagu ini, owner, atau staff yang bisa stop musik.')] });
+    return;
+  }
+
   const hadSomething = musicManager.stop(guildId);
   if (!hadSomething) {
     await message.channel.send({ embeds: [textEmbed('Nggak ada musik yang lagi diputar atau diantrikan.')] });
@@ -331,7 +346,7 @@ async function cmdPlaylist(message, args, rest) {
     }
 
     const guildId = message.guild.id;
-    const tracksCopy = tracks.map((t) => ({ ...t, requestedBy: message.author.tag }));
+    const tracksCopy = tracks.map((t) => ({ ...t, requestedBy: message.author.tag, requestedById: message.author.id }));
     musicManager.setTextChannel(guildId, message.channel.id);
     const { startedImmediately } = musicManager.enqueueMany(guildId, tracksCopy);
 
