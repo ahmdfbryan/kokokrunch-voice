@@ -4,6 +4,7 @@ const { resolveTrack, isPlaylistUrl, resolvePlaylist } = require('./trackResolve
 const { buildNowPlayingCard, claimNowPlayingCard } = require('./nowPlayingCard');
 const playlistStore = require('./musicPlaylistStore');
 const permissions = require('./permissions');
+const voteManager = require('./voteManager');
 const { COLOR, textEmbed, formatEta, formatTotalDuration } = require('./musicFormat');
 
 const PREFIX = 's!';
@@ -118,18 +119,32 @@ async function cmdSkip(message) {
   const queue = musicManager.getQueue(guildId);
   const skippedTrack = queue.current;
 
-  if (!permissions.canControlPlayback(message.member, skippedTrack)) {
+  if (permissions.canControlPlayback(message.member, skippedTrack)) {
+    const skipped = musicManager.skip(guildId);
+    if (!skipped) {
+      await message.channel.send({ embeds: [textEmbed('Nggak ada lagu yang lagi diputar.')] });
+      return;
+    }
+    await message.channel.send({
+      embeds: [textEmbed(`**${skippedTrack.title}** has been skipped by <@${message.author.id}>`)],
+    });
+    return;
+  }
+
+  if (voteManager.isAuthorityPresent(message.guild, skippedTrack)) {
     await message.channel.send({ embeds: [textEmbed('Cuma yang minta lagu ini, owner, atau staff yang bisa skip.')] });
     return;
   }
 
-  const skipped = musicManager.skip(guildId);
-  if (!skipped) {
-    await message.channel.send({ embeds: [textEmbed('Nggak ada lagu yang lagi diputar.')] });
-    return;
-  }
-  await message.channel.send({
-    embeds: [textEmbed(`**${skippedTrack.title}** has been skipped by <@${message.author.id}>`)],
+  await voteManager.handleVoteRequest({
+    guild: message.guild,
+    member: message.member,
+    channelId: message.channel.id,
+    action: 'skip',
+    currentTrack: skippedTrack,
+    client: message.client,
+    sendPublic: (payload) => message.channel.send(payload),
+    replyPrivate: (text) => message.channel.send({ embeds: [textEmbed(text)] }),
   });
 }
 
@@ -137,17 +152,31 @@ async function cmdStop(message) {
   const guildId = message.guild.id;
   const queue = musicManager.getQueue(guildId);
 
-  if (!permissions.canControlPlayback(message.member, queue.current)) {
+  if (permissions.canControlPlayback(message.member, queue.current)) {
+    const hadSomething = musicManager.stop(guildId);
+    if (!hadSomething) {
+      await message.channel.send({ embeds: [textEmbed('Nggak ada musik yang lagi diputar atau diantrikan.')] });
+      return;
+    }
+    await message.channel.send({ embeds: [textEmbed('Musik dihentikan, antrian dikosongkan.')] });
+    return;
+  }
+
+  if (voteManager.isAuthorityPresent(message.guild, queue.current)) {
     await message.channel.send({ embeds: [textEmbed('Cuma yang minta lagu ini, owner, atau staff yang bisa stop musik.')] });
     return;
   }
 
-  const hadSomething = musicManager.stop(guildId);
-  if (!hadSomething) {
-    await message.channel.send({ embeds: [textEmbed('Nggak ada musik yang lagi diputar atau diantrikan.')] });
-    return;
-  }
-  await message.channel.send({ embeds: [textEmbed('Musik dihentikan, antrian dikosongkan.')] });
+  await voteManager.handleVoteRequest({
+    guild: message.guild,
+    member: message.member,
+    channelId: message.channel.id,
+    action: 'stop',
+    currentTrack: queue.current,
+    client: message.client,
+    sendPublic: (payload) => message.channel.send(payload),
+    replyPrivate: (text) => message.channel.send({ embeds: [textEmbed(text)] }),
+  });
 }
 
 async function cmdPause(message) {
