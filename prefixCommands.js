@@ -147,9 +147,7 @@ async function cmdStop(message) {
     await message.channel.send({ embeds: [textEmbed('Nggak ada musik yang lagi diputar atau diantrikan.')] });
     return;
   }
-  await message.channel.send({
-    embeds: [textEmbed(`Musik dihentikan oleh <@${message.author.id}>, antrian dikosongkan.`)],
-  });
+  await message.channel.send({ embeds: [textEmbed('Musik dihentikan, antrian dikosongkan.')] });
 }
 
 async function cmdPause(message) {
