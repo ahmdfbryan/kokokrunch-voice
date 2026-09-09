@@ -4,6 +4,7 @@ const {
   SlashCommandBuilder,
   EmbedBuilder,
   PermissionFlagsBits,
+  MessageFlags,
 } = require('discord.js');
 const stickyStore = require('./stickyMessage');
 const stickyManager = require('./stickyManager');
@@ -21,7 +22,7 @@ const commands = [
         const embed = new EmbedBuilder()
           .setColor(0x99aab5)
           .setDescription('Pesan ini kosong (nggak ada teks/embed), nggak bisa dijadiin sticky.');
-        await interaction.reply({ embeds: [embed], ephemeral: true });
+        await interaction.reply({ embeds: [embed], flags: MessageFlags.Ephemeral });
         return;
       }
 
@@ -39,7 +40,7 @@ const commands = [
       stickyManager.scheduleRepost(interaction.channelId);
 
       const embed = new EmbedBuilder().setColor(0x57f287).setDescription('Pesan ini sekarang jadi sticky message di channel ini.');
-      await interaction.reply({ embeds: [embed], ephemeral: true });
+      await interaction.reply({ embeds: [embed], flags: MessageFlags.Ephemeral });
     },
   },
 
@@ -54,7 +55,7 @@ const commands = [
 
       if (!had) {
         const embed = new EmbedBuilder().setColor(0x99aab5).setDescription('Nggak ada sticky message aktif di channel ini.');
-        await interaction.reply({ embeds: [embed], ephemeral: true });
+        await interaction.reply({ embeds: [embed], flags: MessageFlags.Ephemeral });
         return;
       }
 
@@ -69,7 +70,7 @@ const commands = [
       }
 
       const embed = new EmbedBuilder().setColor(0x57f287).setDescription('Sticky message di channel ini udah dimatiin.');
-      await interaction.reply({ embeds: [embed], ephemeral: true });
+      await interaction.reply({ embeds: [embed], flags: MessageFlags.Ephemeral });
     },
   },
 ];
