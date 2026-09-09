@@ -1,4 +1,4 @@
-const { SlashCommandBuilder, EmbedBuilder } = require('discord.js');
+const { SlashCommandBuilder, EmbedBuilder, MessageFlags } = require('discord.js');
 
 const EMBED_COLOR = 0x5865f2;
 
@@ -48,7 +48,7 @@ const commands = [
         text: 'Command musik & playlist juga bisa dipakai lewat prefix, misal s!play, s!skip, s!playlist save <nama>',
       });
 
-      await interaction.reply({ embeds: [embed], ephemeral: true });
+      await interaction.reply({ embeds: [embed], flags: MessageFlags.Ephemeral });
     },
   },
 ];
