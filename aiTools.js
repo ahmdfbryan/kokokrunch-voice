@@ -70,6 +70,58 @@ const TOOL_DECLARATIONS = [
       required: ['name'],
     },
   },
+  {
+    name: 'set_loop_mode',
+    description:
+      'Atur mode pengulangan musik: "off" (mati), "track" (ulang lagu yang lagi diputar terus-menerus), atau "queue" (ulang seluruh antrian setelah abis).',
+    parametersJsonSchema: {
+      type: 'object',
+      properties: { mode: { type: 'string', enum: ['off', 'track', 'queue'], description: 'Mode loop yang diinginkan' } },
+      required: ['mode'],
+    },
+  },
+  {
+    name: 'set_autoplay',
+    description:
+      'Nyalakan atau matikan autoplay -- kalau nyala, begitu antrian abis, bot otomatis nyari & muterin lagu yang mirip dari lagu terakhir.',
+    parametersJsonSchema: {
+      type: 'object',
+      properties: { enabled: { type: 'boolean', description: 'true buat nyalain, false buat matiin' } },
+      required: ['enabled'],
+    },
+  },
+  {
+    name: 'show_now_playing',
+    description: 'Tampilkan card interaktif Now Playing yang nunjukkin lagu yang lagi diputar beserta tombol kontrolnya.',
+    parametersJsonSchema: { type: 'object', properties: {} },
+  },
+  {
+    name: 'add_to_playlist',
+    description:
+      'Tambahkan satu atau lebih link lagu ke playlist pribadi milik user yang minta (bikin playlist baru kalau namanya belum ada, atau nambah ke yang udah ada).',
+    parametersJsonSchema: {
+      type: 'object',
+      properties: {
+        name: { type: 'string', description: 'Nama playlist' },
+        links: { type: 'array', items: { type: 'string' }, description: 'Daftar link YouTube/Spotify yang mau ditambahkan' },
+      },
+      required: ['name', 'links'],
+    },
+  },
+  {
+    name: 'list_playlists',
+    description: 'Lihat semua playlist pribadi tersimpan milik user yang minta, beserta jumlah lagunya.',
+    parametersJsonSchema: { type: 'object', properties: {} },
+  },
+  {
+    name: 'delete_playlist',
+    description: 'Hapus playlist pribadi tersimpan milik user yang minta.',
+    parametersJsonSchema: {
+      type: 'object',
+      properties: { name: { type: 'string', description: 'Nama playlist yang mau dihapus' } },
+      required: ['name'],
+    },
+  },
 ];
 
 /**
@@ -236,6 +288,73 @@ async function executeTool(toolName, args, ctx) {
           );
         }
         return { success: true, message: `Playlist "${name}" (${tracks.length} lagu) ditambahkan ke antrian.` };
+      }
+
+      case 'set_loop_mode': {
+        const mode = String(args?.mode || '').toLowerCase();
+        if (!['off', 'track', 'queue'].includes(mode)) {
+          return { success: false, message: 'Mode loop nggak valid, harus off/track/queue.' };
+        }
+        musicManager.setLoopMode(guildId, mode);
+        const label = { off: 'dimatikan', track: 'lagu ini diulang terus', queue: 'antrian diulang terus' }[mode];
+        return { success: true, message: `Loop ${label}.` };
+      }
+
+      case 'set_autoplay': {
+        const enabled = Boolean(args?.enabled);
+        musicManager.setAutoplay(guildId, enabled);
+        return { success: true, message: enabled ? 'Autoplay has been enabled' : 'Autoplay has been disabled' };
+      }
+
+      case 'show_now_playing': {
+        if (!musicManager.getQueue(guildId).current) {
+          return { success: true, message: 'Nggak ada musik yang lagi diputar.' };
+        }
+        const channel = await client.channels.fetch(channelId);
+        await claimNowPlayingCard(guildId, client, (embed, components) => channel.send({ embeds: [embed], components }));
+        return { success: true, message: 'Card Now Playing ditampilkan.' };
+      }
+
+      case 'add_to_playlist': {
+        const name = String(args?.name || '').trim().slice(0, 50);
+        if (!name) return { success: false, message: 'Nama playlist nggak boleh kosong.' };
+        const links = Array.isArray(args?.links) ? args.links : [];
+        if (links.length === 0) return { success: false, message: 'Nggak ada link yang disebutin.' };
+
+        const resolvedTracks = [];
+        let failedCount = 0;
+        for (const link of links.slice(0, 15)) {
+          try {
+            if (isPlaylistUrl(link)) {
+              const playlistTracks = await resolvePlaylist(link, playlistStore.MAX_TRACKS_PER_PLAYLIST);
+              resolvedTracks.push(...playlistTracks);
+            } else {
+              resolvedTracks.push(await resolveTrack(link));
+            }
+          } catch {
+            failedCount++;
+          }
+        }
+        if (resolvedTracks.length === 0) return { success: false, message: 'Nggak ada satupun link yang berhasil diproses.' };
+
+        const result = playlistStore.appendToPlaylist(userId, name, resolvedTracks);
+        let message = `${resolvedTracks.length} lagu ditambahkan ke playlist "${name}" (total sekarang: ${result.trackCount} lagu).`;
+        if (failedCount > 0) message += ` ${failedCount} link gagal diproses.`;
+        return { success: true, message };
+      }
+
+      case 'list_playlists': {
+        const playlists = playlistStore.listPlaylists(userId);
+        if (playlists.length === 0) return { success: true, message: 'User ini belum punya playlist tersimpan.' };
+        const list = playlists.map((p) => `${p.name} (${p.trackCount} lagu)`).join(', ');
+        return { success: true, message: `Playlist tersimpan: ${list}.` };
+      }
+
+      case 'delete_playlist': {
+        const name = String(args?.name || '').trim();
+        if (!name) return { success: false, message: 'Nama playlist nggak boleh kosong.' };
+        const deleted = playlistStore.deletePlaylist(userId, name);
+        return { success: deleted, message: deleted ? `Playlist "${name}" dihapus.` : `Playlist "${name}" nggak ketemu.` };
       }
 
       default:
