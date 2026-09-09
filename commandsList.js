@@ -44,6 +44,10 @@ const commands = [
         }
       }
 
+      embed.setFooter({
+        text: 'Command musik & playlist juga bisa dipakai lewat prefix, misal s!play, s!skip, s!playlist save <nama>',
+      });
+
       await interaction.reply({ embeds: [embed], ephemeral: true });
     },
   },
