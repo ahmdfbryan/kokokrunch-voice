@@ -535,13 +535,26 @@ client.on('interactionCreate', async (interaction) => {
           // Sinkron juga (nggak lewat transisi Idle), aman di-render ulang sekarang juga.
           const { embed, components } = buildNowPlayingCard(guildId);
           await interaction.update({ embeds: [embed], components });
-        } else if (interaction.customId === 'music_skip' || interaction.customId === 'music_stop') {
-          // Skip/stop transisinya ASYNC (lewat event 'Idle'), jadi nggak
-          // langsung di-render ulang di sini -- nanti onTrackStart/onQueueEmpty
-          // yang manggil refreshNowPlayingCard() begitu transisinya kelar.
-          if (interaction.customId === 'music_skip') musicManager.skip(guildId);
-          else musicManager.stop(guildId);
+        } else if (interaction.customId === 'music_skip') {
+          // Transisinya ASYNC (lewat event 'Idle'), jadi nggak langsung
+          // di-render ulang di sini -- nanti onTrackStart yang manggil
+          // refreshNowPlayingCard() begitu transisinya kelar.
+          musicManager.skip(guildId);
           await interaction.deferUpdate();
+        } else if (interaction.customId === 'music_stop') {
+          musicManager.stop(guildId);
+          await interaction.deferUpdate();
+          try {
+            await interaction.channel.send({
+              embeds: [
+                new EmbedBuilder()
+                  .setColor(EMBED_COLOR)
+                  .setDescription(`Musik dihentikan oleh <@${interaction.user.id}>, antrian dikosongkan.`),
+              ],
+            });
+          } catch (err) {
+            log(`[MUSIC BUTTON] Gagal kirim notifikasi stop: ${err.message}`);
+          }
         } else {
           await interaction.deferUpdate();
         }
