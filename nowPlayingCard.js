@@ -109,4 +109,54 @@ function buildNowPlayingCard(guildId) {
   return { embed, components: [row] };
 }
 
-module.exports = { buildNowPlayingCard, cycleLoopMode };
+// Kunci per-guild buat operasi baca-tulis "pesan Now Playing yang lagi
+// ke-track" -- diekspor dari sini (bukan didefinisiin lokal di index.js)
+// biar SEMUA tempat yang bisa bikin/nge-update card (index.js buat ganti
+// lagu otomatis/refresh/reposisi, DAN commands.js/musicPlaylistCommands.js/
+// nowPlayingCommand.js buat /play, /playlist play, /nowplaying) make kunci
+// yang SAMA. Kalau kuncinya kepisah-pisah per file, 2 proses masih bisa
+// balapan bikin card dobel walau masing-masing "dikunci" versi sendiri.
+const npLockChains = new Map();
+function withNowPlayingLock(guildId, fn) {
+  const previous = npLockChains.get(guildId) || Promise.resolve();
+  const next = previous.then(fn, fn).catch((err) => {
+    console.error(`[NOWPLAYING] Error dalam operasi terkunci: ${err?.message || err}`);
+  });
+  npLockChains.set(guildId, next);
+  return next;
+}
+
+/**
+ * Buat/timpa card Now Playing khusus lewat jalur COMMAND (/play langsung
+ * main, /playlist play, /nowplaying) -- beda dari update yang dipicu
+ * proses background di index.js (ganti lagu otomatis dll), soalnya di sini
+ * kita WAJIB ngasih balesan ke interaction Discord-nya (nggak bisa "edit
+ * pesan lain terus selesai tanpa reply" kayak proses background bisa).
+ * Makanya card lama (kalau ada) langsung DIHAPUS dulu, baru kirim yang
+ * baru lewat `sendFn` -- tetep di bawah kunci yang sama biar nggak pernah
+ * race sama proses lain yang juga lagi megang card ini.
+ *
+ * `sendFn(embed, components)` harus resolve ke Message yang baru dikirim,
+ * misal lewat `interaction.editReply(...)` atau `channel.send(...)`.
+ */
+async function claimNowPlayingCard(guildId, client, sendFn) {
+  return withNowPlayingLock(guildId, async () => {
+    const oldMsg = musicManager.getNowPlayingMessage(guildId);
+    if (oldMsg) {
+      try {
+        const oldChannel = await client.channels.fetch(oldMsg.channelId);
+        const oldMessage = await oldChannel.messages.fetch(oldMsg.messageId);
+        await oldMessage.delete();
+      } catch {
+        // udah kehapus / nggak ketemu, aman diabaikan
+      }
+    }
+
+    const { embed, components } = buildNowPlayingCard(guildId);
+    const sentMessage = await sendFn(embed, components);
+    musicManager.setNowPlayingMessage(guildId, sentMessage.channelId, sentMessage.id);
+    return sentMessage;
+  });
+}
+
+module.exports = { buildNowPlayingCard, cycleLoopMode, withNowPlayingLock, claimNowPlayingCard };
