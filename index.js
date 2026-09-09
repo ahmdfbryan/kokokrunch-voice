@@ -602,17 +602,6 @@ client.on('interactionCreate', async (interaction) => {
           }
           musicManager.stop(guildId);
           await interaction.deferUpdate();
-          try {
-            await interaction.channel.send({
-              embeds: [
-                new EmbedBuilder()
-                  .setColor(EMBED_COLOR)
-                  .setDescription(`Musik dihentikan oleh <@${interaction.user.id}>, antrian dikosongkan.`),
-              ],
-            });
-          } catch (err) {
-            log(`[MUSIC BUTTON] Gagal kirim notifikasi stop: ${err.message}`);
-          }
         } else {
           await interaction.deferUpdate();
         }
