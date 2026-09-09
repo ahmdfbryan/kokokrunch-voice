@@ -152,9 +152,7 @@ const commands = [
         });
         return;
       }
-      await interaction.reply({
-        embeds: [textEmbed(`Musik dihentikan oleh <@${interaction.user.id}>, antrian dikosongkan.`)],
-      });
+      await interaction.reply({ embeds: [textEmbed('Musik dihentikan, antrian dikosongkan.')] });
     },
   },
 
