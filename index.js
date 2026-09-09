@@ -24,6 +24,7 @@ const stickyManager = require('./stickyManager');
 const { handlePrefixCommand } = require('./prefixCommands');
 const giveawayManager = require('./giveawayManager');
 const aiChat = require('./aiChat');
+const aiTools = require('./aiTools');
 const commands = require('./commands');
 
 const EMBED_COLOR = 0x5865f2;
@@ -512,6 +513,46 @@ client.on('interactionCreate', async (interaction) => {
       return;
     }
 
+    if (interaction.customId.startsWith('ai_confirm:') || interaction.customId.startsWith('ai_cancel:')) {
+      const [action, id] = interaction.customId.split(':');
+      const pending = aiTools.getPendingConfirmation(id);
+
+      if (!pending) {
+        await interaction.update({
+          embeds: [new EmbedBuilder().setColor(EMBED_COLOR).setDescription('Konfirmasi ini udah kadaluarsa.')],
+          components: [],
+        });
+        return;
+      }
+      if (interaction.user.id !== pending.userId) {
+        await interaction.reply({ content: 'Cuma yang minta aksi ini yang bisa konfirmasi/batal.', ephemeral: true });
+        return;
+      }
+
+      aiTools.clearPendingConfirmation(id);
+
+      if (action === 'ai_cancel') {
+        await interaction.update({
+          embeds: [new EmbedBuilder().setColor(EMBED_COLOR).setDescription('Dibatalkan.')],
+          components: [],
+        });
+        return;
+      }
+
+      const result = await aiTools.executeTool(pending.toolName, pending.args, {
+        guildId: pending.guildId ?? interaction.guildId,
+        channelId: pending.channelId ?? interaction.channelId,
+        userId: pending.userId,
+        userTag: interaction.user.tag,
+        client: interaction.client,
+      });
+      await interaction.update({
+        embeds: [new EmbedBuilder().setColor(EMBED_COLOR).setDescription(result.message)],
+        components: [],
+      });
+      return;
+    }
+
     if (interaction.customId.startsWith('music_')) {
       const guildId = interaction.guildId;
       // Pastiin referensi pesan yang di-track selalu nunjuk ke card yang
@@ -642,9 +683,28 @@ client.on('messageCreate', async (message) => {
 
   try {
     await message.channel.sendTyping().catch(() => {});
-    const answer = await aiChat.chatReply(message.author.id, question);
-    const chunks = aiChat.splitIntoChunks(answer);
+    const ctx = {
+      guildId: message.guild.id,
+      channelId: message.channelId,
+      userId: message.author.id,
+      userTag: message.author.tag,
+      client: message.client,
+    };
+    const result = await aiChat.chatReply(message.author.id, question, ctx);
 
+    if (result.pendingConfirmation) {
+      const id = aiTools.createPendingConfirmation({
+        ...result.pendingConfirmation,
+        guildId: ctx.guildId,
+        channelId: ctx.channelId,
+        userId: ctx.userId,
+      });
+      const confirmMsg = aiTools.buildConfirmationMessage(id, result.pendingConfirmation.toolName, result.pendingConfirmation.args);
+      await message.reply(confirmMsg);
+      return;
+    }
+
+    const chunks = aiChat.splitIntoChunks(result.text);
     for (let i = 0; i < chunks.length; i++) {
       if (i === 0) {
         await message.reply(chunks[i]);
