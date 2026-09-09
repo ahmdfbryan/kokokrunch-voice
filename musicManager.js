@@ -2,6 +2,8 @@ const { createAudioResource, StreamType, AudioPlayerStatus } = require('@discord
 const { createSilentAudioStream } = require('./silentstream');
 const ytdlp = require('./ytdlp');
 const trackResolver = require('./trackResolver');
+const fs = require('fs');
+const path = require('path');
 
 // State antrian per guild. Bot ini didesain buat 1 guild/channel tetap,
 // tapi tetap di-map per guildId biar rapi & gampang diperluas nanti.
@@ -11,6 +13,41 @@ let player = null;
 let log = console.log;
 let onTrackStart = null; // (guildId, track) => void -- buat update status/notifikasi
 let onQueueEmpty = null; // (guildId) => void -- dipanggil pas balik ke silent audio
+
+// Referensi pesan "Now Playing" yang lagi aktif disimpen juga ke FILE (bukan
+// cuma di memori) -- soalnya kalau bot di-restart (pm2 restart) pas lagi ada
+// musik main, state di memori ke-reset total, dan card lama jadi "yatim
+// piatu" (nggak ada yang tau lagi harus di-edit yang mana). Dengan disimpen
+// ke file, pas bot nyala lagi bisa dibersihin dulu sebelum bikin card baru.
+const NP_MSG_DATA_PATH = path.join(__dirname, 'data', 'nowPlayingMessages.json');
+
+function persistNowPlayingMessages() {
+  const dump = {};
+  for (const [guildId, queue] of queues.entries()) {
+    if (queue.nowPlayingMessage) dump[guildId] = queue.nowPlayingMessage;
+  }
+  try {
+    fs.mkdirSync(path.dirname(NP_MSG_DATA_PATH), { recursive: true });
+    const tmpPath = `${NP_MSG_DATA_PATH}.tmp`;
+    fs.writeFileSync(tmpPath, JSON.stringify(dump, null, 2));
+    fs.renameSync(tmpPath, NP_MSG_DATA_PATH);
+  } catch (err) {
+    log(`[MUSIC] Gagal simpan referensi Now Playing message: ${err.message}`);
+  }
+}
+
+/**
+ * Dipanggil sekali pas bot startup, buat tau card mana yang ke-track di
+ * sesi SEBELUM restart ini -- dipakai index.js buat bersihin card yatim
+ * piatu itu sebelum mulai main lagi.
+ */
+function loadPersistedNowPlayingMessages() {
+  try {
+    return JSON.parse(fs.readFileSync(NP_MSG_DATA_PATH, 'utf8'));
+  } catch {
+    return {};
+  }
+}
 
 /**
  * Wajib dipanggil sekali dari index.js setelah AudioPlayer dibuat, supaya
@@ -358,6 +395,7 @@ function getElapsedSeconds(guildId) {
 function setNowPlayingMessage(guildId, channelId, messageId) {
   const queue = getQueue(guildId);
   queue.nowPlayingMessage = messageId ? { channelId, messageId } : null;
+  persistNowPlayingMessages();
 }
 
 function getNowPlayingMessage(guildId) {
@@ -417,6 +455,7 @@ module.exports = {
   getElapsedSeconds,
   setNowPlayingMessage,
   getNowPlayingMessage,
+  loadPersistedNowPlayingMessages,
   enqueue,
   enqueueMany,
   playNext,
