@@ -383,6 +383,7 @@ async function cmdPlaylist(message, args, rest) {
 
 const HANDLERS = {
   play: (message, args, rest) => cmdPlay(message, rest),
+  p: (message, args, rest) => cmdPlay(message, rest),
   skip: cmdSkip,
   stop: cmdStop,
   pause: cmdPause,
