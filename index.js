@@ -706,7 +706,7 @@ client.on('messageCreate', async (message) => {
       userTag: message.author.tag,
       client: message.client,
     };
-    const result = await aiChat.chatReply(message.author.id, question, ctx);
+    const result = await aiChat.chatReply(question, ctx);
 
     if (result.pendingConfirmation) {
       const id = aiTools.createPendingConfirmation({
