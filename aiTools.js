@@ -52,6 +52,11 @@ const TOOL_DECLARATIONS = [
     parametersJsonSchema: { type: 'object', properties: {} },
   },
   {
+    name: 'get_voice_channel_members',
+    description: 'Lihat daftar nama orang yang lagi ada di voice channel sekarang (siapa aja yang lagi standby dengerin musik).',
+    parametersJsonSchema: { type: 'object', properties: {} },
+  },
+  {
     name: 'save_playlist',
     description:
       'Simpan antrian musik yang lagi jalan sekarang (lagu yang lagi main + semua yang ngantri) jadi playlist pribadi milik user yang minta.',
@@ -255,6 +260,21 @@ async function executeTool(toolName, args, ctx) {
           success: true,
           message: `Lagi main: "${queue.current.title}". Antrian berikutnya (${queue.tracks.length}): ${upcoming}.`,
         };
+      }
+
+      case 'get_voice_channel_members': {
+        const config = require('./config');
+        const guild = await client.guilds.fetch(guildId);
+        const channel = guild.channels.cache.get(config.voiceChannelId);
+        if (!channel || !channel.isVoiceBased()) {
+          return { success: false, message: 'Nggak bisa ngecek voice channel sekarang.' };
+        }
+        const members = [...channel.members.values()].filter((m) => !m.user.bot);
+        if (members.length === 0) {
+          return { success: true, message: 'Nggak ada orang di voice channel sekarang.' };
+        }
+        const names = members.map((m) => m.displayName || m.user.username).join(', ');
+        return { success: true, message: `Yang lagi ada di voice channel (${members.length} orang): ${names}.` };
       }
 
       case 'save_playlist': {
