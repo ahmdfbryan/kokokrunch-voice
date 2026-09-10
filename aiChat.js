@@ -197,6 +197,15 @@ Kamu adalah bot AI yang berada di server Discord, tetapi gaya percakapanmu harus
 
 Kamu tidak perlu menyebut bahwa kamu adalah AI kecuali pengguna menanyakannya secara langsung.
 
+## INI OBROLAN GRUP, BUKAN CHAT PRIBADI
+
+Percakapan ini dipakai BARENG sama semua orang yang lagi ada di voice channel -- bukan chat 1-on-1. Tiap pesan bakal ditandain siapa yang ngomong dengan format "Nama: isi pesan". Perhatikan baik-baik siapa yang lagi ngomong di setiap pesan, terutama kalau yang chat gantian orang beda-beda.
+
+- Kalau orang yang chat sekarang BEDA dari sebelumnya, jangan bingung atau nganggep itu orang yang sama -- tapi tetep boleh nyambungin konteks obrolan sebelumnya kalau relevan (misal orang kedua nanggepin apa yang dibahas orang pertama).
+- Kamu BOLEH manggil orang pakai nama mereka kalau emang pas/perlu buat kejelasan (misal ngebedain "kata Ahmad tadi..." vs "kata Budi barusan..."), tapi jangan berlebihan nyebut nama di tiap kalimat.
+- Jangan asal nyimpulin satu orang lagi ngomong padahal itu orang lain -- kalau nggak yakin siapa yang dimaksud, boleh tanya balik.
+- Balasanmu tetep ditujukan buat orang yang BARUSAN ngomong (pesan paling akhir), bukan orang sebelumnya, kecuali emang lagi ngebahas bareng-bareng.
+
 ## ATURAN UTAMA
 
 Prioritaskan:
@@ -225,25 +234,29 @@ function init(logger) {
   if (logger) log = logger;
 }
 
-// Maksimal berapa "pertukaran" (user+model) yang disimpan per user, biar
+// Maksimal berapa "pertukaran" (user+model) yang disimpan per sesi, biar
 // konteks percakapan nggak membengkak terus (biaya token + relevansi).
-const MAX_HISTORY_TURNS = 12;
-// Kalau user nggak chat lagi selama ini, percakapannya dianggap "selesai"
-// dan mulai dari nol lagi pas dia nyapa lagi.
+const MAX_HISTORY_TURNS = 20;
+// Kalau nggak ada yang chat lagi selama ini, percakapannya dianggap "selesai"
+// dan mulai dari nol lagi pas ada yang nyapa lagi.
 const IDLE_RESET_MS = 30 * 60 * 1000;
 
-// userId -> { history: Content[], lastActive: number }
+// Sesi chat dipakai BARENG oleh semua orang di 1 server (bukan per-user) --
+// biar obrolan nyambung walau yang chat gantian orang beda-beda, kayak
+// beneran ngobrol bareng di voice channel. Tiap pesan ditandain siapa yang
+// ngomong (lihat chatReply) biar AI tetep bisa bedain orangnya.
+// guildId -> { history: Content[], lastActive: number }
 const sessions = new Map();
 
-function getSession(userId) {
+function getSession(guildId) {
   const now = Date.now();
-  const existing = sessions.get(userId);
+  const existing = sessions.get(guildId);
   if (existing && now - existing.lastActive < IDLE_RESET_MS) {
     existing.lastActive = now;
     return existing;
   }
   const fresh = { history: [], lastActive: now };
-  sessions.set(userId, fresh);
+  sessions.set(guildId, fresh);
   return fresh;
 }
 
@@ -397,9 +410,16 @@ async function askOnce(prompt, ctx) {
  * Chat multi-turn per user (inget percakapan sebelumnya). Dipakai buat
  * fitur mention-chat. `ctx` sama kayak di askOnce.
  */
-async function chatReply(userId, message, ctx) {
-  const session = getSession(userId);
-  session.history.push({ role: 'user', parts: [{ text: message }] });
+/**
+ * Chat multi-turn yang dipakai BARENG semua orang di 1 server (inget
+ * percakapan sebelumnya, siapapun yang ngomong). Dipakai buat fitur
+ * mention-chat. `ctx` = { guildId, channelId, userId, userTag, client }.
+ * Tiap pesan user ditandain "Nama: isi pesan" di history, biar AI tetep
+ * bisa bedain siapa yang lagi ngomong walau gantian orang.
+ */
+async function chatReply(message, ctx) {
+  const session = getSession(ctx.guildId);
+  session.history.push({ role: 'user', parts: [{ text: `${ctx.userTag}: ${message}` }] });
 
   const response = await callGeminiWithRetry(() =>
     ai.models.generateContent({
@@ -423,8 +443,11 @@ async function chatReply(userId, message, ctx) {
   return result;
 }
 
-function resetSession(userId) {
-  sessions.delete(userId);
+/**
+ * Reset sesi chat bareng buat 1 server (bukan per-user lagi).
+ */
+function resetSession(guildId) {
+  sessions.delete(guildId);
 }
 
 /**
