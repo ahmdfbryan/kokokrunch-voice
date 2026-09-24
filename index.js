@@ -19,6 +19,7 @@ const {
   TextInputBuilder,
   TextInputStyle,
   UserSelectMenuBuilder,
+  AttachmentBuilder,
 } = require('discord.js');
 const {
   joinVoiceChannel,
@@ -56,6 +57,7 @@ const streakStore = require('./streakStore');
 const streakManager = require('./streakManager');
 const idCardStore = require('./idCardStore');
 const idCardManager = require('./idCardManager');
+const { renderIdCardImage } = require('./idCardImage');
 const { COLOR, textEmbed } = require('./musicFormat');
 const { buildCommandsListEmbed } = require('./commandsList');
 const { buildLeaderboardEmbed } = require('./voiceActivityCommands');
@@ -1021,10 +1023,17 @@ client.on('interactionCreate', async (interaction) => {
           return;
         }
 
-        const embed = idCardManager.buildIdCardEmbed(card, interaction.user, interaction.guild?.name);
-        await interaction.reply({ embeds: [embed], flags: MessageFlags.Ephemeral });
+        // Gambar ID Card digambar on-the-fly (canvas + foto profil Discord)
+        // -- bisa makan waktu >3 detik kalau fetch avatarnya lelet, jadi
+        // defer dulu biar interaksinya nggak keburu expired.
+        await interaction.deferReply({ flags: MessageFlags.Ephemeral });
+        const buffer = await renderIdCardImage(card, interaction.user, interaction.guild?.name);
+        const attachment = new AttachmentBuilder(buffer, { name: 'idcard.png' });
+        const embed = idCardManager.buildIdCardEmbed(card, 'idcard.png');
+        await interaction.editReply({ embeds: [embed], files: [attachment] });
       } catch (err) {
         log(`[PANEL] Error tombol panelid_view: ${err?.stack || err}`);
+        await interaction.editReply({ content: 'Gagal generate gambar ID Card, coba lagi.' }).catch(() => {});
       }
       return;
     }
@@ -1346,16 +1355,23 @@ client.on('interactionCreate', async (interaction) => {
           fields[field.key] = check.value;
         }
 
+        // Defer dulu -- generate gambarnya (canvas + fetch avatar) bisa
+        // makan waktu lebih dari 3 detik.
+        await interaction.deferReply({ flags: MessageFlags.Ephemeral });
+
         const joinServerAt = interaction.member?.joinedTimestamp || null;
         const card = idCardStore.createCard(interaction.guildId, interaction.user.id, fields, joinServerAt);
-        const embed = idCardManager.buildIdCardEmbed(card, interaction.user, interaction.guild?.name);
-        await interaction.reply({
+        const buffer = await renderIdCardImage(card, interaction.user, interaction.guild?.name);
+        const attachment = new AttachmentBuilder(buffer, { name: 'idcard.png' });
+        const embed = idCardManager.buildIdCardEmbed(card, 'idcard.png');
+        await interaction.editReply({
           content: '✅ ID Card berhasil dibuat!',
           embeds: [embed],
-          flags: MessageFlags.Ephemeral,
+          files: [attachment],
         });
       } catch (err) {
         log(`[PANEL] Error panel_idcard_modal: ${err?.stack || err}`);
+        await interaction.editReply({ content: 'Gagal generate gambar ID Card, coba lagi.' }).catch(() => {});
       }
       return;
     }
