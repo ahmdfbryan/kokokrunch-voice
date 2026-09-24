@@ -97,14 +97,16 @@ function buildVoiceStatsSelectRow() {
 }
 
 /**
- * Baris 3 tombol pilihan buat fitur Streak, dipakai di balasan ephemeral
- * pas tombol "Streak" di panel utama diklik.
+ * Baris tombol pilihan buat fitur Streak, dipakai di balasan ephemeral pas
+ * tombol "Streak" di panel utama diklik. "Leaderboard" nampilin ranking
+ * semua grup streak di server ini (dikirim publik ke channel).
  */
 function buildStreakSubRow() {
   return new ActionRowBuilder().addComponents(
     new ButtonBuilder().setCustomId('panelstreak_info').setLabel('Info Streak').setEmoji('🔥').setStyle(ButtonStyle.Danger),
     new ButtonBuilder().setCustomId('panelstreak_create').setLabel('Buat Grup').setEmoji('➕').setStyle(ButtonStyle.Success),
-    new ButtonBuilder().setCustomId('panelstreak_mygroup').setLabel('Grup Saya').setEmoji('👥').setStyle(ButtonStyle.Secondary)
+    new ButtonBuilder().setCustomId('panelstreak_mygroup').setLabel('Grup Saya').setEmoji('👥').setStyle(ButtonStyle.Secondary),
+    new ButtonBuilder().setCustomId('panelstreak_leaderboard').setLabel('Leaderboard').setEmoji('🏆').setStyle(ButtonStyle.Secondary)
   );
 }
 
