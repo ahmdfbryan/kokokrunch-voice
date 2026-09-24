@@ -1,7 +1,7 @@
 const { SlashCommandBuilder, EmbedBuilder, MessageFlags } = require('discord.js');
 const voiceActivity = require('./voiceActivity');
 
-const LEADERBOARD_COLOR = 0xf1c40f;
+const LEADERBOARD_COLOR = 0x3b82f6; // biru, senada sama warna panel & ID Card
 // 3 besar pakai medali, sisanya pakai angka bulat biru -- mirip gaya
 // leaderboard channel voice yang dicontohin user (rank -> nama -> title ->
 // durasi, masing-masing baris sendiri per entry).
