@@ -27,8 +27,7 @@ const SPACER_FIELD = { name: '​', value: '​', inline: true };
 function buildPanelCard(botAvatarURL) {
   const embed = new EmbedBuilder()
     .setColor(PANEL_COLOR)
-    .setAuthor({ name: 'SATPAM VOICE', iconURL: botAvatarURL || undefined })
-    .setTitle('🛡️ Control Panel')
+    .setAuthor({ name: 'SATPAM PANEL', iconURL: botAvatarURL || undefined })
     .setDescription('_Akses semua fitur bot cukup dari satu tempat ini._')
     .addFields(
       { name: '🎵  Musik', value: 'Play • Skip • Stop • Queue', inline: true },
@@ -39,7 +38,7 @@ function buildPanelCard(botAvatarURL) {
       SPACER_FIELD
     )
     .setThumbnail(botAvatarURL || null)
-    .setFooter({ text: 'KokoKrunch Studios • Satpam Voice Panel', iconURL: botAvatarURL || undefined })
+    .setFooter({ text: 'KokoKrunch Studios', iconURL: botAvatarURL || undefined })
     .setTimestamp();
 
   const row = new ActionRowBuilder().addComponents(
