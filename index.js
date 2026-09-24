@@ -5,7 +5,20 @@ const dns = require('dns');
 // Paksa resolusi DNS IPv4 dulu supaya voice connection nggak nyangkut di IPv6 yang mati.
 dns.setDefaultResultOrder('ipv4first');
 
-const { Client, GatewayIntentBits, ActivityType, EmbedBuilder, MessageFlags } = require('discord.js');
+const {
+  Client,
+  GatewayIntentBits,
+  ActivityType,
+  EmbedBuilder,
+  MessageFlags,
+  PermissionFlagsBits,
+  ActionRowBuilder,
+  ButtonBuilder,
+  ButtonStyle,
+  ModalBuilder,
+  TextInputBuilder,
+  TextInputStyle,
+} = require('discord.js');
 const {
   joinVoiceChannel,
   createAudioPlayer,
@@ -28,6 +41,10 @@ const aiTools = require('./aiTools');
 const permissions = require('./permissions');
 const voteManager = require('./voteManager');
 const commands = require('./commands');
+const panelStore = require('./panelStore');
+const { buildPanelCard, buildMusicSubRow } = require('./panelCard');
+const { COLOR, textEmbed } = require('./musicFormat');
+const { buildCommandsListEmbed } = require('./commandsList');
 
 const EMBED_COLOR = 0x5865f2;
 // Catatan: URL ini dikoreksi dari input asli yang ada teks "hyphenhyphen"
@@ -167,67 +184,117 @@ async function refreshNowPlayingCard(guildId) {
   });
 }
 
-// Card "Now Playing" dibuat "nempel" ke bawah chat kayak sticky message:
-// kalau ada chat baru numpuk di atasnya, card-nya dipindah (hapus + kirim
-// ulang) ke posisi paling bawah lagi. Pakai debounce biar nggak spam
+// Card "Now Playing" DAN panel bot dibuat "nempel" ke bawah chat kayak
+// sticky message: kalau ada chat baru numpuk di atasnya, dipindah (hapus +
+// kirim ulang) ke posisi paling bawah lagi. Pakai debounce biar nggak spam
 // delete+send tiap 1 pesan kalau chat lagi rame.
-const NP_REPOSITION_DEBOUNCE_MS = 3000;
-const NP_REPOSITION_MAX_WAIT_MS = 15_000;
-const npRepositionTimers = new Map(); // guildId -> { debounceTimeout, maxTimeout }
-// Selama guildId ada di sini, SEMUA messageCreate diabaikan buat guild itu --
+//
+// Kalau di channel yang sama ada PANEL aktif DAN card Now Playing lagi
+// nge-track di channel itu juga, keduanya direposisi BARENGAN dalam satu
+// operasi (repositionChannelStack): panel dikirim ulang duluan, baru card
+// Now Playing nyusul dikirim SETELAHNYA -- supaya urutannya di chat selalu
+// panel di atas, musik selalu paling bawah, sesuai yang diminta.
+const STACK_REPOSITION_DEBOUNCE_MS = 3000;
+const STACK_REPOSITION_MAX_WAIT_MS = 15_000;
+const stackRepositionTimers = new Map(); // channelId -> { debounceTimeout, maxTimeout }
+// Selama channelId ada di sini, SEMUA messageCreate diabaikan buat channel itu --
 // ini nyegah pesan hasil kirim-ulang kita sendiri kedetect balik sebagai
 // "chat baru" (yang kalau dibiarin bikin loop kedip-kedip terus-terusan).
-const npRepositioningInFlight = new Set();
+const stackRepositioningInFlight = new Set();
 
-function scheduleNowPlayingReposition(guildId) {
-  if (!musicManager.getNowPlayingMessage(guildId)) return;
-
-  let entry = npRepositionTimers.get(guildId);
+function scheduleStackReposition(guildId, channelId) {
+  let entry = stackRepositionTimers.get(channelId);
   if (!entry) {
     entry = { debounceTimeout: null, maxTimeout: null };
-    npRepositionTimers.set(guildId, entry);
-    entry.maxTimeout = setTimeout(() => repositionNowPlayingCard(guildId), NP_REPOSITION_MAX_WAIT_MS);
+    stackRepositionTimers.set(channelId, entry);
+    entry.maxTimeout = setTimeout(() => runStackReposition(guildId, channelId), STACK_REPOSITION_MAX_WAIT_MS);
   }
 
   if (entry.debounceTimeout) clearTimeout(entry.debounceTimeout);
-  entry.debounceTimeout = setTimeout(() => repositionNowPlayingCard(guildId), NP_REPOSITION_DEBOUNCE_MS);
+  entry.debounceTimeout = setTimeout(() => runStackReposition(guildId, channelId), STACK_REPOSITION_DEBOUNCE_MS);
 }
 
-async function repositionNowPlayingCard(guildId) {
-  const entry = npRepositionTimers.get(guildId);
+async function runStackReposition(guildId, channelId) {
+  const entry = stackRepositionTimers.get(channelId);
   if (entry) {
     clearTimeout(entry.debounceTimeout);
     clearTimeout(entry.maxTimeout);
-    npRepositionTimers.delete(guildId);
+    stackRepositionTimers.delete(channelId);
   }
 
-  npRepositioningInFlight.add(guildId);
+  stackRepositioningInFlight.add(channelId);
   try {
-    await withNowPlayingLock(guildId, async () => {
-      // Dicek ULANG di dalam lock (bukan cuma sebelum antri) -- soalnya
-      // referensi pesan atau status musik bisa aja udah berubah selagi
-      // operasi lain di depan kita dalam antrian masih diproses.
-      const npMsg = musicManager.getNowPlayingMessage(guildId);
-      if (!npMsg) return;
-      if (!musicManager.getQueue(guildId).current) return; // nggak ada musik, nggak usah dipindah
-
-      const channel = await client.channels.fetch(npMsg.channelId);
-      try {
-        const oldMessage = await channel.messages.fetch(npMsg.messageId);
-        await oldMessage.delete();
-      } catch {
-        // udah kehapus manual / nggak ketemu, aman diabaikan
-      }
-      const { embed, components } = buildNowPlayingCard(guildId);
-      const sentMessage = await channel.send({ embeds: [embed], components });
-      musicManager.setNowPlayingMessage(guildId, channel.id, sentMessage.id);
-    });
+    await repositionChannelStack(guildId, channelId);
   } finally {
     // Jeda dikit sebelum ngelepas flag -- ngasih waktu event messageCreate
     // buat pesan yang baru aja dikirim (yang bisa nyampe agak telat lewat
     // gateway) biar tetep ke-filter dengan benar, nggak trigger diri sendiri.
-    setTimeout(() => npRepositioningInFlight.delete(guildId), 2000);
+    setTimeout(() => stackRepositioningInFlight.delete(channelId), 2000);
   }
+}
+
+/**
+ * Reposisi panel (kalau aktif di channel ini) DAN card Now Playing (kalau
+ * lagi nge-track di channel ini juga) supaya keduanya balik ke paling bawah
+ * chat, dengan urutan: panel di atas, Now Playing di bawah (paling akhir).
+ * Semua di dalam withNowPlayingLock supaya nggak balapan sama operasi lain
+ * yang nyentuh card Now Playing (ganti lagu, refresh berkala, dst).
+ */
+async function repositionChannelStack(guildId, channelId) {
+  await withNowPlayingLock(guildId, async () => {
+    // Dicek ULANG di dalam lock (bukan cuma sebelum antri) -- soalnya
+    // referensi pesan atau status musik/panel bisa aja udah berubah selagi
+    // operasi lain di depan kita dalam antrian masih diproses.
+    const panel = panelStore.getPanel(channelId);
+    const npMsg = musicManager.getNowPlayingMessage(guildId);
+    const npTrackedHere = !!(npMsg && npMsg.channelId === channelId);
+    const npStillPlaying = npTrackedHere && !!musicManager.getQueue(guildId).current;
+
+    if (!panel && !npTrackedHere) return; // nggak ada apa-apa buat direposisi di channel ini
+
+    let channel;
+    try {
+      channel = await client.channels.fetch(channelId);
+    } catch (err) {
+      log(`[PANEL] Gagal fetch channel ${channelId} buat reposisi: ${err.message}`);
+      return;
+    }
+
+    if (panel && panel.panelMessageId) {
+      try {
+        const oldPanelMsg = await channel.messages.fetch(panel.panelMessageId);
+        await oldPanelMsg.delete();
+      } catch {
+        // udah kehapus manual / nggak ketemu, aman diabaikan
+      }
+    }
+
+    if (npTrackedHere) {
+      try {
+        const oldNpMsg = await channel.messages.fetch(npMsg.messageId);
+        await oldNpMsg.delete();
+      } catch {
+        // udah kehapus manual / nggak ketemu, aman diabaikan
+      }
+      if (!npStillPlaying) {
+        musicManager.setNowPlayingMessage(guildId, null, null); // udah nggak ada musik, berhenti nge-track
+      }
+    }
+
+    // Panel dikirim DULUAN (biar nempatin posisi lebih atas), baru Now
+    // Playing nyusul (biar dia yang paling akhir/paling bawah).
+    if (panel) {
+      const { embed, components } = buildPanelCard();
+      const sentPanel = await channel.send({ embeds: [embed], components });
+      panelStore.setPanelMessageId(channelId, sentPanel.id);
+    }
+
+    if (npStillPlaying) {
+      const { embed, components } = buildNowPlayingCard(guildId);
+      const sentNp = await channel.send({ embeds: [embed], components });
+      musicManager.setNowPlayingMessage(guildId, channel.id, sentNp.id);
+    }
+  });
 }
 
 // Kalau bot baru start/restart, member yang udah lebih dulu ada di voice
@@ -274,11 +341,124 @@ function log(msg) {
   console.log(`[${new Date().toISOString()}] ${msg}`);
 }
 
+// ============================================================
+// PANEL: skip/stop lewat tombol panel -- logikanya sama persis kayak
+// /skip & /stop (permission owner/staff/requester dulu, baru fallback ke
+// vote), cuma alur balasnya beda: ack duluan ephemeral (deferReply), baru
+// pesan publik "X telah di-skip" dikirim terpisah ke channel (bukan reply
+// interaksi), soalnya balasan tombol panel sendiri emang didesain ephemeral.
+// ============================================================
+async function handlePanelSkip(interaction) {
+  await interaction.deferReply({ flags: MessageFlags.Ephemeral });
+  const queue = musicManager.getQueue(interaction.guildId);
+  const currentTrack = queue.current;
+
+  if (permissions.canControlPlayback(interaction.member, currentTrack)) {
+    const skipped = musicManager.skip(interaction.guildId);
+    if (!skipped) {
+      await interaction.editReply({ embeds: [textEmbed('Nggak ada lagu yang lagi diputar.')] });
+      return;
+    }
+    await interaction.editReply({ embeds: [textEmbed('Lagu berhasil di-skip.')] });
+    await interaction.channel
+      .send({ embeds: [textEmbed(`**${currentTrack.title}** has been skipped by <@${interaction.user.id}>`)] })
+      .catch(() => {});
+    return;
+  }
+
+  if (voteManager.isAuthorityPresent(interaction.guild, currentTrack)) {
+    await interaction.editReply({ embeds: [textEmbed('Cuma yang minta lagu ini, owner, atau staff yang bisa skip.')] });
+    return;
+  }
+
+  await voteManager.handleVoteRequest({
+    guild: interaction.guild,
+    member: interaction.member,
+    channelId: interaction.channelId,
+    action: 'skip',
+    currentTrack,
+    client: interaction.client,
+    sendPublic: (payload) => interaction.channel.send(payload),
+    replyPrivate: (text) => interaction.editReply({ embeds: [textEmbed(text)] }),
+  });
+}
+
+async function handlePanelStop(interaction) {
+  await interaction.deferReply({ flags: MessageFlags.Ephemeral });
+  const queue = musicManager.getQueue(interaction.guildId);
+  const currentTrack = queue.current;
+
+  if (permissions.canControlPlayback(interaction.member, currentTrack)) {
+    const hadSomething = musicManager.stop(interaction.guildId);
+    if (!hadSomething) {
+      await interaction.editReply({ embeds: [textEmbed('Nggak ada musik yang lagi diputar atau diantrikan.')] });
+      return;
+    }
+    await interaction.editReply({ embeds: [textEmbed('Musik berhasil dihentikan.')] });
+    await interaction.channel.send({ embeds: [textEmbed('Musik dihentikan, antrian dikosongkan.')] }).catch(() => {});
+    return;
+  }
+
+  if (voteManager.isAuthorityPresent(interaction.guild, currentTrack)) {
+    await interaction.editReply({ embeds: [textEmbed('Cuma yang minta lagu ini, owner, atau staff yang bisa stop musik.')] });
+    return;
+  }
+
+  await voteManager.handleVoteRequest({
+    guild: interaction.guild,
+    member: interaction.member,
+    channelId: interaction.channelId,
+    action: 'stop',
+    currentTrack,
+    client: interaction.client,
+    sendPublic: (payload) => interaction.channel.send(payload),
+    replyPrivate: (text) => interaction.editReply({ embeds: [textEmbed(text)] }),
+  });
+}
+
+async function handlePanelQueue(interaction) {
+  const queue = musicManager.getQueue(interaction.guildId);
+  const autoplayStatus = queue.autoplayEnabled ? 'ON' : 'OFF';
+
+  if (!queue.current && queue.tracks.length === 0) {
+    await interaction.reply({
+      embeds: [textEmbed(`Antrian kosong, nggak ada musik yang diputar.\n\nAutoplay: ${autoplayStatus}`)],
+      flags: MessageFlags.Ephemeral,
+    });
+    return;
+  }
+
+  const embed = new EmbedBuilder().setColor(COLOR).setTitle('Antrian Musik');
+
+  if (queue.current) {
+    embed.addFields({
+      name: 'Sedang Diputar',
+      value: `**${queue.current.title}**${queue.current.isAutoplay ? ' _(Autoplay)_' : ''} — diminta oleh ${queue.current.requestedBy}`,
+    });
+  }
+
+  if (queue.tracks.length > 0) {
+    const list = queue.tracks
+      .slice(0, 10)
+      .map((t, i) => `${i + 1}. **${t.title}** — diminta oleh ${t.requestedBy}`)
+      .join('\n');
+    const extra = queue.tracks.length > 10 ? `\n...dan ${queue.tracks.length - 10} lagu lainnya` : '';
+    embed.addFields({ name: 'Berikutnya', value: list + extra });
+  }
+
+  embed.addFields({ name: 'Autoplay', value: autoplayStatus, inline: true });
+
+  await interaction.reply({ embeds: [embed], flags: MessageFlags.Ephemeral });
+}
+
 voiceActivity.load();
 musicPlaylistStore.load();
 stickyMessage.load();
 stickyManager.init(client, log);
+panelStore.load();
 aiChat.init(log);
+
+const panelApi = { repositionChannelStack };
 
 async function connectToVoice() {
   if (reconnecting) return;
@@ -621,6 +801,290 @@ client.on('interactionCreate', async (interaction) => {
       return;
     }
 
+    // ============================================================
+    // PANEL: semua tombol dari panel utama & sub-menunya. Semua balasannya
+    // ephemeral (cuma keliatan yang klik) supaya panel publik yang sticky
+    // itu nggak perlu berubah tampilan buat orang lain.
+    // ============================================================
+    if (interaction.customId === 'panel_music') {
+      try {
+        await interaction.reply({
+          embeds: [new EmbedBuilder().setColor(EMBED_COLOR).setDescription('🎵 Kontrol musik cepat:')],
+          components: [buildMusicSubRow()],
+          flags: MessageFlags.Ephemeral,
+        });
+      } catch (err) {
+        log(`[PANEL] Error tombol panel_music: ${err?.stack || err}`);
+      }
+      return;
+    }
+
+    if (interaction.customId === 'panel_giveaway') {
+      try {
+        const canManage = interaction.memberPermissions?.has(PermissionFlagsBits.ManageGuild);
+        const row = new ActionRowBuilder().addComponents(
+          new ButtonBuilder().setCustomId('panelgw_list').setLabel('Lihat Aktif').setEmoji('📋').setStyle(ButtonStyle.Secondary),
+          ...(canManage
+            ? [new ButtonBuilder().setCustomId('panelgw_create').setLabel('Buat Giveaway').setEmoji('🎁').setStyle(ButtonStyle.Success)]
+            : [])
+        );
+        await interaction.reply({
+          embeds: [new EmbedBuilder().setColor(EMBED_COLOR).setDescription('🎁 Kelola giveaway di server ini:')],
+          components: [row],
+          flags: MessageFlags.Ephemeral,
+        });
+      } catch (err) {
+        log(`[PANEL] Error tombol panel_giveaway: ${err?.stack || err}`);
+      }
+      return;
+    }
+
+    if (interaction.customId === 'panel_voicestats') {
+      try {
+        const stats = voiceActivity.getStats(interaction.user.id);
+        if (!stats) {
+          await interaction.reply({
+            embeds: [new EmbedBuilder().setColor(0x99aab5).setDescription('📭 Kamu belum pernah tercatat aktivitas voice-nya.')],
+            flags: MessageFlags.Ephemeral,
+          });
+          return;
+        }
+        const tier = voiceActivity.getTierInfo(stats.totalSeconds);
+        const progress = voiceActivity.getProgress(stats.totalSeconds);
+        const bar = voiceActivity.renderProgressBar(progress.percent);
+        const progressText = progress.isMax
+          ? `${bar} 100%\nTier tertinggi tercapai! 🎉`
+          : `${bar} ${Math.round(progress.percent * 100)}%\n${progress.hoursRemaining.toFixed(1)} jam lagi menuju ${progress.next.emoji} **${progress.next.title}**`;
+
+        const embed = new EmbedBuilder()
+          .setColor(tier.color)
+          .setAuthor({ name: `Voice Stats — ${interaction.user.username}`, iconURL: interaction.user.displayAvatarURL() })
+          .setThumbnail(interaction.user.displayAvatarURL())
+          .addFields(
+            { name: '🎧 Total Voice Time', value: voiceActivity.formatDurationLong(stats.totalSeconds), inline: true },
+            { name: '🔥 Streak Sekarang', value: `${stats.currentStreak} hari`, inline: true },
+            { name: '🏆 Streak Terpanjang', value: `${stats.longestStreak} hari`, inline: true },
+            { name: 'Title', value: `${tier.emoji} **${tier.title}**`, inline: false },
+            { name: 'Progress ke Tier Berikutnya', value: progressText, inline: false }
+          );
+        if (stats.isActive) embed.setFooter({ text: '🟢 Lagi aktif di voice sekarang' });
+
+        const row = new ActionRowBuilder().addComponents(
+          new ButtonBuilder().setCustomId('panelvs_leaderboard').setLabel('Leaderboard').setEmoji('🏆').setStyle(ButtonStyle.Secondary)
+        );
+        await interaction.reply({ embeds: [embed], components: [row], flags: MessageFlags.Ephemeral });
+      } catch (err) {
+        log(`[PANEL] Error tombol panel_voicestats: ${err?.stack || err}`);
+      }
+      return;
+    }
+
+    if (interaction.customId === 'panelvs_leaderboard') {
+      try {
+        const top = voiceActivity.getLeaderboard(10);
+        if (top.length === 0) {
+          await interaction.reply({
+            embeds: [new EmbedBuilder().setColor(0x99aab5).setDescription('📭 Belum ada data aktivitas voice sama sekali.')],
+            flags: MessageFlags.Ephemeral,
+          });
+          return;
+        }
+        const RANK_EMOJI = ['🥇', '🥈', '🥉'];
+        const lines = top.map((entry, i) => {
+          const tier = voiceActivity.getTierInfo(entry.totalSeconds);
+          const rank = RANK_EMOJI[i] || `${i + 1}.`;
+          return `${rank} **${entry.username}** — ${voiceActivity.formatDurationLong(entry.totalSeconds)} ${tier.emoji}`;
+        });
+        await interaction.reply({
+          embeds: [new EmbedBuilder().setColor(0xf1c40f).setTitle('🏆 Voice Leaderboard').setDescription(lines.join('\n'))],
+          flags: MessageFlags.Ephemeral,
+        });
+      } catch (err) {
+        log(`[PANEL] Error tombol panelvs_leaderboard: ${err?.stack || err}`);
+      }
+      return;
+    }
+
+    if (interaction.customId === 'panel_help') {
+      try {
+        const embed = buildCommandsListEmbed(commands);
+        await interaction.reply({ embeds: [embed], flags: MessageFlags.Ephemeral });
+      } catch (err) {
+        log(`[PANEL] Error tombol panel_help: ${err?.stack || err}`);
+      }
+      return;
+    }
+
+    if (interaction.customId === 'panelgw_list') {
+      try {
+        const all = giveawayManager.loadAll();
+        const active = all.filter((g) => g.guildId === interaction.guildId && !g.ended);
+        if (active.length === 0) {
+          await interaction.reply({ content: 'Tidak ada giveaway aktif saat ini.', flags: MessageFlags.Ephemeral });
+          return;
+        }
+        const lines = active.map(
+          (g) =>
+            `• **${g.prize}** — ID \`${g.id}\` — <#${g.channelId}> — berakhir <t:${Math.floor(g.endTime / 1000)}:R> — ${g.participants.length} peserta`
+        );
+        await interaction.reply({ content: lines.join('\n'), flags: MessageFlags.Ephemeral });
+      } catch (err) {
+        log(`[PANEL] Error tombol panelgw_list: ${err?.stack || err}`);
+      }
+      return;
+    }
+
+    if (interaction.customId === 'panelgw_create') {
+      try {
+        if (!interaction.memberPermissions?.has(PermissionFlagsBits.ManageGuild)) {
+          await interaction.reply({
+            content: 'Cuma yang punya izin Manage Server yang bisa bikin giveaway.',
+            flags: MessageFlags.Ephemeral,
+          });
+          return;
+        }
+        const modal = new ModalBuilder().setCustomId('panel_giveaway_modal').setTitle('Buat Giveaway');
+        const prizeInput = new TextInputBuilder()
+          .setCustomId('panel_gw_prize')
+          .setLabel('Hadiah')
+          .setStyle(TextInputStyle.Short)
+          .setRequired(true)
+          .setPlaceholder('misal: 550 ROBUX VIA PAYOUT');
+        const durationInput = new TextInputBuilder()
+          .setCustomId('panel_gw_duration')
+          .setLabel('Durasi')
+          .setStyle(TextInputStyle.Short)
+          .setRequired(true)
+          .setPlaceholder('misal: 30m, 1h, 2d, 1h30m');
+        const winnersInput = new TextInputBuilder()
+          .setCustomId('panel_gw_winners')
+          .setLabel('Jumlah Pemenang (default 1)')
+          .setStyle(TextInputStyle.Short)
+          .setRequired(false)
+          .setPlaceholder('1');
+        modal.addComponents(
+          new ActionRowBuilder().addComponents(prizeInput),
+          new ActionRowBuilder().addComponents(durationInput),
+          new ActionRowBuilder().addComponents(winnersInput)
+        );
+        await interaction.showModal(modal);
+      } catch (err) {
+        log(`[PANEL] Error tombol panelgw_create: ${err?.stack || err}`);
+      }
+      return;
+    }
+
+    if (interaction.customId === 'panelmusic_play') {
+      try {
+        const modal = new ModalBuilder().setCustomId('panel_play_modal').setTitle('Putar Musik');
+        const inputField = new TextInputBuilder()
+          .setCustomId('panel_play_input')
+          .setLabel('Link/Judul Lagu')
+          .setStyle(TextInputStyle.Short)
+          .setRequired(true)
+          .setPlaceholder('Link YouTube/Spotify, link playlist, atau judul lagu');
+        modal.addComponents(new ActionRowBuilder().addComponents(inputField));
+        await interaction.showModal(modal);
+      } catch (err) {
+        log(`[PANEL] Error tombol panelmusic_play: ${err?.stack || err}`);
+      }
+      return;
+    }
+
+    if (interaction.customId === 'panelmusic_skip') {
+      try {
+        await handlePanelSkip(interaction);
+      } catch (err) {
+        log(`[PANEL] Error tombol panelmusic_skip: ${err?.stack || err}`);
+      }
+      return;
+    }
+
+    if (interaction.customId === 'panelmusic_stop') {
+      try {
+        await handlePanelStop(interaction);
+      } catch (err) {
+        log(`[PANEL] Error tombol panelmusic_stop: ${err?.stack || err}`);
+      }
+      return;
+    }
+
+    if (interaction.customId === 'panelmusic_queue') {
+      try {
+        await handlePanelQueue(interaction);
+      } catch (err) {
+        log(`[PANEL] Error tombol panelmusic_queue: ${err?.stack || err}`);
+      }
+      return;
+    }
+
+    return;
+  }
+
+  // Modal panel (Play & Create Giveaway) -- balasan submit modal, jenis
+  // interaksi beda lagi dari button/command biasa.
+  if (interaction.isModalSubmit()) {
+    if (interaction.customId === 'panel_play_modal') {
+      const input = interaction.fields.getTextInputValue('panel_play_input')?.trim();
+      if (!input) {
+        await interaction.reply({ content: 'Input nggak boleh kosong.', flags: MessageFlags.Ephemeral });
+        return;
+      }
+      await interaction.deferReply();
+      try {
+        await commands.performPlay(interaction, input, log);
+      } catch (err) {
+        log(`[PANEL] Error play dari panel: ${err?.stack || err}`);
+        await interaction.editReply({ embeds: [textEmbed('Ada error waktu mainin lagu ini.')] }).catch(() => {});
+      }
+      return;
+    }
+
+    if (interaction.customId === 'panel_giveaway_modal') {
+      try {
+        const prize = interaction.fields.getTextInputValue('panel_gw_prize')?.trim();
+        const durationStr = interaction.fields.getTextInputValue('panel_gw_duration')?.trim();
+        const winnersStr = interaction.fields.getTextInputValue('panel_gw_winners')?.trim();
+        const winnerCount = Math.max(1, parseInt(winnersStr, 10) || 1);
+
+        const durationMs = giveawayManager.parseDuration(durationStr);
+        if (!durationMs || durationMs < 10_000) {
+          await interaction.reply({
+            content: 'Durasi tidak valid. Gunakan format seperti `30m`, `1h`, `2d`, atau `1h30m` (minimum 10 detik).',
+            flags: MessageFlags.Ephemeral,
+          });
+          return;
+        }
+
+        const channel = interaction.channel;
+        const botPerms = channel.permissionsFor(interaction.client.user);
+        const required = [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.SendMessages, PermissionFlagsBits.EmbedLinks];
+        const missing = botPerms ? botPerms.missing(required) : required;
+        if (missing.length > 0) {
+          await interaction.reply({
+            content: `Bot tidak punya izin \`${missing.join(', ')}\` di channel ini. Tambahkan izin View Channel, Send Messages, dan Embed Links untuk role bot di channel tersebut, lalu coba lagi.`,
+            flags: MessageFlags.Ephemeral,
+          });
+          return;
+        }
+
+        await interaction.deferReply({ flags: MessageFlags.Ephemeral });
+        const giveaway = await giveawayManager.createGiveaway({ channel, host: interaction.user, prize, winnerCount, durationMs });
+        await interaction.editReply({
+          content: `Giveaway dibuat di <#${channel.id}>! Berakhir dalam ${giveawayManager.formatDuration(durationMs)}. (ID: \`${giveaway.id}\`)`,
+        });
+      } catch (err) {
+        log(`[PANEL] Error submit giveaway modal: ${err?.stack || err}`);
+        const errPayload = { content: 'Ada error waktu bikin giveaway ini.', flags: MessageFlags.Ephemeral };
+        if (interaction.deferred || interaction.replied) {
+          await interaction.editReply(errPayload).catch(() => {});
+        } else {
+          await interaction.reply(errPayload).catch(() => {});
+        }
+      }
+      return;
+    }
+
     return;
   }
 
@@ -643,7 +1107,7 @@ client.on('interactionCreate', async (interaction) => {
   if (!command) return;
 
   try {
-    await command.execute(interaction, log, commands);
+    await command.execute(interaction, log, commands, panelApi);
   } catch (err) {
     log(`[COMMAND] Error di /${interaction.commandName}: ${err?.stack || err}`);
     const errorEmbed = new EmbedBuilder()
@@ -665,18 +1129,25 @@ client.on('messageCreate', (message) => {
   stickyManager.scheduleRepost(message.channelId);
 });
 
-// Now Playing card: "nempel" ke bawah chat kayak sticky message -- kalau
-// ada pesan APAPUN yang numpuk di atasnya (dari user maupun bot, termasuk
-// reply command lain kayak "ditambahkan ke antrian"), jadwalin pindahin
-// card ke bawah lagi. Cuma pesan card ITU SENDIRI yang di-skip, biar nggak
-// trigger reposisi buat dirinya sendiri pas baru aja dikirim ulang.
+// Now Playing card DAN panel bot: "nempel" ke bawah chat kayak sticky
+// message -- kalau ada pesan APAPUN yang numpuk di atasnya (dari user
+// maupun bot, termasuk reply command lain kayak "ditambahkan ke antrian"),
+// jadwalin pindahin balik ke bawah lagi. Cuma pesan panel/card ITU SENDIRI
+// yang di-skip, biar nggak trigger reposisi buat dirinya sendiri pas baru
+// aja dikirim ulang.
 client.on('messageCreate', (message) => {
   if (!currentGuildId) return;
-  if (npRepositioningInFlight.has(currentGuildId)) return;
+  if (stackRepositioningInFlight.has(message.channelId)) return;
+
+  const panel = panelStore.getPanel(message.channelId);
   const npMsg = musicManager.getNowPlayingMessage(currentGuildId);
-  if (!npMsg || npMsg.channelId !== message.channelId) return;
-  if (message.id === npMsg.messageId) return;
-  scheduleNowPlayingReposition(currentGuildId);
+  const npTrackedHere = !!(npMsg && npMsg.channelId === message.channelId);
+
+  if (!panel && !npTrackedHere) return;
+  if (panel && message.id === panel.panelMessageId) return;
+  if (npTrackedHere && message.id === npMsg.messageId) return;
+
+  scheduleStackReposition(currentGuildId, message.channelId);
 });
 
 // Command berbasis prefix (s!play, s!skip, dll) -- lihat prefixCommands.js.
