@@ -6,7 +6,7 @@ const {
   StringSelectMenuBuilder,
 } = require('discord.js');
 
-const PANEL_COLOR = 0x2b2d31;
+const PANEL_COLOR = 0x3b82f6; // biru, senada sama warna ID Card & tema Satpam Voice
 
 /**
  * Panel utama: embed "premium" tapi SENGAJA nggak pakai field inline sama
