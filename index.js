@@ -854,8 +854,7 @@ client.on('interactionCreate', async (interaction) => {
             new EmbedBuilder()
               .setColor(PANEL_COLOR)
               .setAuthor({ name: '🎵  Kontrol Musik' })
-              .setDescription('Pilih aksi di bawah ini.')
-              .setFooter({ text: 'Satpam Voice Panel' }),
+              .setDescription('Pilih aksi di bawah ini.'),
           ],
           components: [buildMusicSubRow()],
           flags: MessageFlags.Ephemeral,
@@ -880,8 +879,7 @@ client.on('interactionCreate', async (interaction) => {
             new EmbedBuilder()
               .setColor(PANEL_COLOR)
               .setAuthor({ name: '🎁  Giveaway' })
-              .setDescription('Kelola giveaway di server ini.')
-              .setFooter({ text: 'Satpam Voice Panel' }),
+              .setDescription('Kelola giveaway di server ini.'),
           ],
           components: [row],
           flags: MessageFlags.Ephemeral,
