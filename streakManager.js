@@ -10,7 +10,29 @@ const streakStore = require('./streakStore');
 const MIN_MEMBERS_TO_START = 3;
 const REQUIRED_CHECKINS = 2;
 const MAX_MEMBERS = 15;
+const MAX_NAME_LENGTH = 32;
 const STREAK_COLOR = 0xff6b35;
+const LEADERBOARD_RANK_ICONS = ['🥇', '🥈', '🥉', '4️⃣', '5️⃣', '6️⃣', '7️⃣', '8️⃣', '9️⃣', '🔟'];
+
+/**
+ * Nama tampilan grup -- kalau owner belum kasih nama (grup lama sebelum
+ * fitur ini ada, atau sengaja dikosongin), fallback ke "Grup <mention
+ * owner>" biar tetep jelas punya siapa.
+ */
+function getGroupDisplayName(group) {
+  return group.name || `Grup <@${group.ownerId}>`;
+}
+
+/**
+ * Validasi & bersihin nama grup dari input user (modal "Buat Grup" /
+ * "Ganti Nama"). Balikin `{ ok, name }` atau `{ ok:false, reason }`.
+ */
+function sanitizeGroupName(rawName) {
+  const trimmed = (rawName || '').trim();
+  if (!trimmed) return { ok: false, reason: 'empty' };
+  if (trimmed.length > MAX_NAME_LENGTH) return { ok: false, reason: 'too_long' };
+  return { ok: true, name: trimmed };
+}
 
 /**
  * "Hari streak" dihitung dari jam 23:00 WIB, bukan jam 00:00 -- window
@@ -106,11 +128,13 @@ function buildStreakInfoEmbed() {
         '',
         '**Cara kerja:**',
         '• Anggota grup bebas ngobrol di channel MANAPUN di server -- nggak perlu thread khusus.',
+        '• Pas bikin grup, kamu kasih **nama grup** sendiri -- bisa diganti kapan aja lewat tombol **Ganti Nama** di **Grup Saya** (owner only).',
         `• Grup butuh minimal **${MIN_MEMBERS_TO_START} member** (maks ${MAX_MEMBERS}) buat bisa mulai nyalain streak.`,
         '• Invite member lain lewat tombol **Grup Saya** (owner only).',
         '• Window baru muncul tiap hari jam **23:00 WIB**, dan tetap aktif (bisa chat kapan aja) sampai jam segitu lagi besok.',
         `• Streak nyala kalau ada minimal **${REQUIRED_CHECKINS} member** grup yang chat dalam 1 window itu.`,
         '• Kalau belum nyala pas window besok muncul, streak grup balik ke 0.',
+        '• Cek ranking semua grup lewat tombol **Leaderboard**.',
       ].join('\n')
     )
     .setFooter({ text: 'KokoKrunch Studios' })
@@ -141,7 +165,7 @@ function buildGroupStatusEmbed(group, requestingUserId) {
 
   return new EmbedBuilder()
     .setColor(STREAK_COLOR)
-    .setAuthor({ name: isOwner ? '👑 Grup Saya (Owner)' : '👥 Grup Saya' })
+    .setAuthor({ name: `${isOwner ? '👑' : '👥'} ${getGroupDisplayName(group)}` })
     .setDescription(
       [
         `**Anggota (${group.memberIds.length}/${MAX_MEMBERS}):** ${memberList}`,
@@ -156,14 +180,50 @@ function buildGroupStatusEmbed(group, requestingUserId) {
     );
 }
 
+/**
+ * Embed "Leaderboard Streak" -- ranking grup streak di server ini,
+ * diurutkan dari streak SEKARANG paling tinggi (tie-break streak
+ * terpanjang). Dipakai dari tombol "Leaderboard" di sub-menu panel Streak,
+ * hasilnya ditampilkan publik ke channel (sama kayak Voice Leaderboard).
+ */
+function buildStreakLeaderboardEmbed(guildId) {
+  const groups = streakStore.getAllGroups(guildId);
+
+  if (groups.length === 0) {
+    return new EmbedBuilder().setColor(0x99aab5).setDescription('📭 Belum ada grup streak sama sekali di server ini.');
+  }
+
+  const sorted = [...groups].sort((a, b) => b.currentStreak - a.currentStreak || b.longestStreak - a.longestStreak);
+
+  const blocks = sorted.slice(0, 10).map((group, i) => {
+    const icon = LEADERBOARD_RANK_ICONS[i] || `#${i + 1}`;
+    const statusEmoji = isActive(group) ? '🔥' : '⏳';
+    return [
+      `${icon}  ➜  **${getGroupDisplayName(group)}**`,
+      `${statusEmoji} Streak Sekarang: **${group.currentStreak} hari** • Terpanjang: **${group.longestStreak} hari**`,
+      `👥 Anggota: ${group.memberIds.length}/${MAX_MEMBERS}`,
+    ].join('\n');
+  });
+
+  return new EmbedBuilder()
+    .setColor(STREAK_COLOR)
+    .setTitle('🏆 Leaderboard Streak')
+    .setDescription(blocks.join('\n\n'))
+    .setFooter({ text: 'KokoKrunch Studios' });
+}
+
 module.exports = {
   MIN_MEMBERS_TO_START,
   REQUIRED_CHECKINS,
   MAX_MEMBERS,
+  MAX_NAME_LENGTH,
   getStreakDayKey,
   isActive,
   handleMessageForStreak,
   tickAllGroups,
+  getGroupDisplayName,
+  sanitizeGroupName,
   buildStreakInfoEmbed,
   buildGroupStatusEmbed,
+  buildStreakLeaderboardEmbed,
 };
