@@ -40,26 +40,30 @@ function buildPanelCard(botAvatarURL) {
     .setFooter({ text: 'KokoKrunch Studios', iconURL: botAvatarURL || undefined })
     .setTimestamp();
 
-  // Discord batasin maks 5 tombol per row, jadi tombol utama dipecah jadi
-  // 2 baris yang seimbang (4 + 3) biar rapi -- urutannya tetap sesuai
-  // permintaan: Musik, Giveaway, Streak, Voice Stats, lalu Tanya AI persis
-  // sebelum Info/Help, dan Credit nutup di baris yang sama biar nggak
-  // nyisain baris sendirian isi 1 tombol doang.
+  // Discord bakal WRAP tombol dalam 1 row ke baris baru kalau total lebar
+  // labelnya kepanjangan buat layar (kejadian di row isi 4 tombol -- tombol
+  // ke-4 "Voice Stats" jadi kepental sendirian ke baris berikutnya). Biar
+  // rapi & konsisten di semua ukuran layar, tiap row dibatasin maks 3
+  // tombol aja (bukan 5), dan Credit sengaja berdiri sendiri di row
+  // terakhir (bukan numpang di row lain) biar bukan wrap yang nggak
+  // disengaja.
   const row1 = new ActionRowBuilder().addComponents(
     new ButtonBuilder().setCustomId('panel_music').setLabel('Musik').setEmoji('🎵').setStyle(ButtonStyle.Primary),
     new ButtonBuilder().setCustomId('panel_giveaway').setLabel('Giveaway').setEmoji('🎁').setStyle(ButtonStyle.Success),
-    new ButtonBuilder().setCustomId('panel_streak').setLabel('Streak').setEmoji('🔥').setStyle(ButtonStyle.Danger),
-    new ButtonBuilder().setCustomId('panel_voicestats').setLabel('Voice Stats').setEmoji('📊').setStyle(ButtonStyle.Secondary)
+    new ButtonBuilder().setCustomId('panel_streak').setLabel('Streak').setEmoji('🔥').setStyle(ButtonStyle.Danger)
   );
   const row2 = new ActionRowBuilder().addComponents(
+    new ButtonBuilder().setCustomId('panel_voicestats').setLabel('Voice Stats').setEmoji('📊').setStyle(ButtonStyle.Secondary),
     new ButtonBuilder().setCustomId('panel_ask').setLabel('Tanya AI').setEmoji('🤖').setStyle(ButtonStyle.Primary),
-    new ButtonBuilder().setCustomId('panel_help').setLabel('Info/Help').setEmoji('ℹ️').setStyle(ButtonStyle.Secondary),
+    new ButtonBuilder().setCustomId('panel_help').setLabel('Info/Help').setEmoji('ℹ️').setStyle(ButtonStyle.Secondary)
+  );
+  const row3 = new ActionRowBuilder().addComponents(
     // Tombol Link (bukan customId) -- diklik langsung buka profil Discord
     // pembuat bot, nggak lewat interactionCreate sama sekali.
     new ButtonBuilder().setLabel('Credit').setEmoji('👤').setStyle(ButtonStyle.Link).setURL('https://discord.com/users/1141222257604182020')
   );
 
-  return { embed, components: [row1, row2] };
+  return { embed, components: [row1, row2, row3] };
 }
 
 /**
