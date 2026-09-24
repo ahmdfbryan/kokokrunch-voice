@@ -28,7 +28,7 @@ function buildPanelCard(botAvatarURL) {
   const embed = new EmbedBuilder()
     .setColor(PANEL_COLOR)
     .setAuthor({ name: 'SATPAM PANEL', iconURL: botAvatarURL || undefined })
-    .setDescription('_Akses semua fitur bot cukup dari satu tempat ini._')
+    .setDescription('Akses semua fitur bot **Satpam Voice** cukup dari panel ini.')
     .addFields(
       { name: '🎵  Musik', value: 'Play • Skip • Stop • Queue', inline: true },
       { name: '🎁  Giveaway', value: 'Buat & pantau giveaway', inline: true },
