@@ -18,6 +18,7 @@ const {
   ModalBuilder,
   TextInputBuilder,
   TextInputStyle,
+  UserSelectMenuBuilder,
 } = require('discord.js');
 const {
   joinVoiceChannel,
@@ -42,7 +43,9 @@ const permissions = require('./permissions');
 const voteManager = require('./voteManager');
 const commands = require('./commands');
 const panelStore = require('./panelStore');
-const { buildPanelCard, buildMusicSubRow, buildVoiceStatsSelectRow, PANEL_COLOR } = require('./panelCard');
+const { buildPanelCard, buildMusicSubRow, buildVoiceStatsSelectRow, buildStreakSubRow, PANEL_COLOR } = require('./panelCard');
+const streakStore = require('./streakStore');
+const streakManager = require('./streakManager');
 const { COLOR, textEmbed } = require('./musicFormat');
 const { buildCommandsListEmbed } = require('./commandsList');
 const { buildLeaderboardEmbed } = require('./voiceActivityCommands');
@@ -487,9 +490,17 @@ musicPlaylistStore.load();
 stickyMessage.load();
 stickyManager.init(client, log);
 panelStore.load();
+streakStore.load();
 aiChat.init(log);
 
 const panelApi = { repositionChannelStack };
+
+// Finalisasi window streak yang lewat: sekali pas startup (jaga-jaga kalau
+// bot mati pas window lagi tutup), lalu berkala tiap 2 menit biar batas jam
+// 23:00 WIB kedeteksi cepat tanpa nunggu lama.
+const STREAK_TICK_INTERVAL_MS = 2 * 60 * 1000;
+streakManager.tickAllGroups();
+setInterval(() => streakManager.tickAllGroups(), STREAK_TICK_INTERVAL_MS);
 
 async function connectToVoice() {
   if (reconnecting) return;
@@ -909,6 +920,106 @@ client.on('interactionCreate', async (interaction) => {
       return;
     }
 
+    // ============================================================
+    // STREAK: tombol "Streak" di panel utama -> munculin 3 pilihan
+    // (Streak/info, Buat Grup, Grup Saya). Deteksi checkin-nya sendiri
+    // jalan otomatis lewat listener messageCreate di atas, nggak ada
+    // tombol "checkin" manual.
+    // ============================================================
+    if (interaction.customId === 'panel_streak') {
+      try {
+        await interaction.reply({
+          embeds: [
+            new EmbedBuilder()
+              .setColor(PANEL_COLOR)
+              .setAuthor({ name: '🔥  Grup Streak Chat' })
+              .setDescription('Pilih salah satu di bawah ini.'),
+          ],
+          components: [buildStreakSubRow()],
+          flags: MessageFlags.Ephemeral,
+        });
+      } catch (err) {
+        log(`[PANEL] Error tombol panel_streak: ${err?.stack || err}`);
+      }
+      return;
+    }
+
+    if (interaction.customId === 'panelstreak_info') {
+      try {
+        await interaction.reply({ embeds: [streakManager.buildStreakInfoEmbed()], flags: MessageFlags.Ephemeral });
+      } catch (err) {
+        log(`[PANEL] Error tombol panelstreak_info: ${err?.stack || err}`);
+      }
+      return;
+    }
+
+    if (interaction.customId === 'panelstreak_create') {
+      try {
+        const existing = streakStore.getGroupByOwner(interaction.guildId, interaction.user.id);
+        if (existing) {
+          await interaction.reply({
+            embeds: [
+              new EmbedBuilder()
+                .setColor(0x99aab5)
+                .setDescription(
+                  `Kamu udah punya grup aktif (ID \`${existing.id}\`, ${existing.memberIds.length}/${streakManager.MAX_MEMBERS} member). Cuma boleh 1 grup per owner.`
+                ),
+            ],
+            flags: MessageFlags.Ephemeral,
+          });
+          return;
+        }
+
+        const group = streakStore.createGroup(interaction.guildId, interaction.user.id, streakManager.getStreakDayKey());
+        await interaction.reply({
+          embeds: [
+            new EmbedBuilder()
+              .setColor(0x57f287)
+              .setDescription(
+                `✅ Grup berhasil dibuat! (ID \`${group.id}\`)\n\nUndang minimal **${streakManager.MIN_MEMBERS_TO_START - 1} orang lagi** (total ${streakManager.MIN_MEMBERS_TO_START}) lewat tombol **Grup Saya** buat mulai nyalain streak.`
+              ),
+          ],
+          flags: MessageFlags.Ephemeral,
+        });
+      } catch (err) {
+        log(`[PANEL] Error tombol panelstreak_create: ${err?.stack || err}`);
+      }
+      return;
+    }
+
+    if (interaction.customId === 'panelstreak_mygroup') {
+      try {
+        const group = streakStore.getGroupForUser(interaction.guildId, interaction.user.id);
+        if (!group) {
+          await interaction.reply({
+            embeds: [
+              new EmbedBuilder()
+                .setColor(0x99aab5)
+                .setDescription('Kamu belum join atau bikin grup streak manapun. Klik **Buat Grup** buat mulai.'),
+            ],
+            flags: MessageFlags.Ephemeral,
+          });
+          return;
+        }
+
+        const embed = streakManager.buildGroupStatusEmbed(group, interaction.user.id);
+        const isOwner = group.ownerId === interaction.user.id;
+        const components = [];
+        if (isOwner && group.memberIds.length < streakManager.MAX_MEMBERS) {
+          const select = new UserSelectMenuBuilder()
+            .setCustomId('panelstreak_invite_select')
+            .setPlaceholder('➕ Invite member baru ke grup ini...')
+            .setMinValues(1)
+            .setMaxValues(1);
+          components.push(new ActionRowBuilder().addComponents(select));
+        }
+        await interaction.reply({ embeds: [embed], components, flags: MessageFlags.Ephemeral });
+      } catch (err) {
+        log(`[PANEL] Error tombol panelstreak_mygroup: ${err?.stack || err}`);
+      }
+      return;
+    }
+
     if (interaction.customId === 'panelgw_list') {
       try {
         const all = giveawayManager.loadAll();
@@ -1114,6 +1225,70 @@ client.on('interactionCreate', async (interaction) => {
     return;
   }
 
+  // Picker "Invite member" (owner only) dari tombol Grup Saya -- pilih 1
+  // orang lewat native user picker Discord, langsung ditambahin ke grup.
+  if (interaction.isUserSelectMenu()) {
+    if (interaction.customId === 'panelstreak_invite_select') {
+      try {
+        const group = streakStore.getGroupByOwner(interaction.guildId, interaction.user.id);
+        if (!group) {
+          await interaction.update({
+            embeds: [new EmbedBuilder().setColor(0x99aab5).setDescription('Kamu bukan owner grup manapun.')],
+            components: [],
+          });
+          return;
+        }
+
+        const selected = interaction.users.first();
+        if (!selected) {
+          await interaction.reply({ content: 'Nggak ada user yang dipilih.', flags: MessageFlags.Ephemeral });
+          return;
+        }
+        if (selected.bot) {
+          await interaction.reply({ content: 'Nggak bisa invite bot ke grup streak.', flags: MessageFlags.Ephemeral });
+          return;
+        }
+
+        const result = streakStore.addMember(group.id, selected.id);
+        if (!result.ok) {
+          const reasonText =
+            result.reason === 'already_member'
+              ? 'User itu udah jadi member grup ini.'
+              : result.reason === 'full'
+                ? `Grup udah penuh (maks ${streakManager.MAX_MEMBERS} member).`
+                : 'Gagal nambahin member ke grup.';
+          await interaction.reply({ content: reasonText, flags: MessageFlags.Ephemeral });
+          return;
+        }
+
+        const updatedGroup = result.group;
+        const embed = streakManager.buildGroupStatusEmbed(updatedGroup, interaction.user.id);
+        const components = [];
+        if (updatedGroup.memberIds.length < streakManager.MAX_MEMBERS) {
+          const select = new UserSelectMenuBuilder()
+            .setCustomId('panelstreak_invite_select')
+            .setPlaceholder('➕ Invite member baru ke grup ini...')
+            .setMinValues(1)
+            .setMaxValues(1);
+          components.push(new ActionRowBuilder().addComponents(select));
+        }
+        await interaction.update({
+          embeds: [
+            new EmbedBuilder()
+              .setColor(0x57f287)
+              .setDescription(`✅ <@${selected.id}> berhasil ditambahin ke grup. Total member: ${updatedGroup.memberIds.length}/${streakManager.MAX_MEMBERS}.`),
+            embed,
+          ],
+          components,
+        });
+      } catch (err) {
+        log(`[PANEL] Error invite streak: ${err?.stack || err}`);
+      }
+      return;
+    }
+    return;
+  }
+
   // Autocomplete (misal saran nama playlist pas ngetik /playlist play) --
   // ini jenis interaksi beda lagi, harus dijawab lewat respond(), bukan reply().
   if (interaction.isAutocomplete()) {
@@ -1174,6 +1349,16 @@ client.on('messageCreate', (message) => {
   if (npTrackedHere && message.id === npMsg.messageId) return;
 
   scheduleStackReposition(currentGuildId, message.channelId);
+});
+
+// Streak grup: SEMUA pesan non-bot di guild manapun (bukan cuma 1 channel)
+// dihitung sebagai "checkin" hari ini buat grup streak yang diikuti si
+// pengirim -- sesuai desain "bebas ngobrol di channel manapun", bukan
+// terbatas 1 thread/channel khusus.
+client.on('messageCreate', (message) => {
+  if (message.author.bot) return;
+  if (!message.guild) return;
+  streakManager.handleMessageForStreak(message.guild.id, message.author.id);
 });
 
 // Command berbasis prefix (s!play, s!skip, dll) -- lihat prefixCommands.js.
