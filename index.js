@@ -39,6 +39,7 @@ const { handlePrefixCommand } = require('./prefixCommands');
 const giveawayManager = require('./giveawayManager');
 const aiChat = require('./aiChat');
 const aiTools = require('./aiTools');
+const aiCommands = require('./aiCommands');
 const permissions = require('./permissions');
 const voteManager = require('./voteManager');
 const commands = require('./commands');
@@ -910,6 +911,23 @@ client.on('interactionCreate', async (interaction) => {
       return;
     }
 
+    if (interaction.customId === 'panel_ask') {
+      try {
+        const modal = new ModalBuilder().setCustomId('panel_ask_modal').setTitle('Tanya AI');
+        const questionInput = new TextInputBuilder()
+          .setCustomId('panel_ask_question')
+          .setLabel('Pertanyaan kamu')
+          .setStyle(TextInputStyle.Paragraph)
+          .setRequired(true)
+          .setPlaceholder('Tulis pertanyaan kamu di sini...');
+        modal.addComponents(new ActionRowBuilder().addComponents(questionInput));
+        await interaction.showModal(modal);
+      } catch (err) {
+        log(`[PANEL] Error tombol panel_ask: ${err?.stack || err}`);
+      }
+      return;
+    }
+
     if (interaction.customId === 'panel_help') {
       try {
         const embed = buildCommandsListEmbed(commands);
@@ -1152,6 +1170,20 @@ client.on('interactionCreate', async (interaction) => {
       } catch (err) {
         log(`[PANEL] Error play dari panel: ${err?.stack || err}`);
         await interaction.editReply({ embeds: [textEmbed('Ada error waktu mainin lagu ini.')] }).catch(() => {});
+      }
+      return;
+    }
+
+    if (interaction.customId === 'panel_ask_modal') {
+      const question = interaction.fields.getTextInputValue('panel_ask_question')?.trim();
+      if (!question) {
+        await interaction.reply({ content: 'Pertanyaan nggak boleh kosong.', flags: MessageFlags.Ephemeral });
+        return;
+      }
+      try {
+        await aiCommands.performAsk(interaction, question);
+      } catch (err) {
+        log(`[PANEL] Error tanya AI dari panel: ${err?.stack || err}`);
       }
       return;
     }
