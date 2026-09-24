@@ -42,7 +42,7 @@ const permissions = require('./permissions');
 const voteManager = require('./voteManager');
 const commands = require('./commands');
 const panelStore = require('./panelStore');
-const { buildPanelCard, buildMusicSubRow } = require('./panelCard');
+const { buildPanelCard, buildMusicSubRow, buildVoiceStatsSelectRow } = require('./panelCard');
 const { COLOR, textEmbed } = require('./musicFormat');
 const { buildCommandsListEmbed } = require('./commandsList');
 
@@ -284,7 +284,7 @@ async function repositionChannelStack(guildId, channelId) {
     // Panel dikirim DULUAN (biar nempatin posisi lebih atas), baru Now
     // Playing nyusul (biar dia yang paling akhir/paling bawah).
     if (panel) {
-      const { embed, components } = buildPanelCard();
+      const { embed, components } = buildPanelCard(client.user?.displayAvatarURL?.());
       const sentPanel = await channel.send({ embeds: [embed], components });
       panelStore.setPanelMessageId(channelId, sentPanel.id);
     }
@@ -414,6 +414,47 @@ async function handlePanelStop(interaction) {
     sendPublic: (payload) => interaction.channel.send(payload),
     replyPrivate: (text) => interaction.editReply({ embeds: [textEmbed(text)] }),
   });
+}
+
+function buildVoiceStatsEmbed(user) {
+  const stats = voiceActivity.getStats(user.id);
+  if (!stats) {
+    return new EmbedBuilder().setColor(0x99aab5).setDescription(`📭 **${user.username}** belum pernah tercatat aktivitas voice-nya.`);
+  }
+  const tier = voiceActivity.getTierInfo(stats.totalSeconds);
+  const progress = voiceActivity.getProgress(stats.totalSeconds);
+  const bar = voiceActivity.renderProgressBar(progress.percent);
+  const progressText = progress.isMax
+    ? `${bar} 100%\nTier tertinggi tercapai! 🎉`
+    : `${bar} ${Math.round(progress.percent * 100)}%\n${progress.hoursRemaining.toFixed(1)} jam lagi menuju ${progress.next.emoji} **${progress.next.title}**`;
+
+  const embed = new EmbedBuilder()
+    .setColor(tier.color)
+    .setAuthor({ name: `Voice Stats — ${user.username}`, iconURL: user.displayAvatarURL() })
+    .setThumbnail(user.displayAvatarURL())
+    .addFields(
+      { name: '🎧 Total Voice Time', value: voiceActivity.formatDurationLong(stats.totalSeconds), inline: true },
+      { name: '🔥 Streak Sekarang', value: `${stats.currentStreak} hari`, inline: true },
+      { name: '🏆 Streak Terpanjang', value: `${stats.longestStreak} hari`, inline: true },
+      { name: 'Title', value: `${tier.emoji} **${tier.title}**`, inline: false },
+      { name: 'Progress ke Tier Berikutnya', value: progressText, inline: false }
+    );
+  if (stats.isActive) embed.setFooter({ text: '🟢 Lagi aktif di voice sekarang' });
+  return embed;
+}
+
+function buildVoiceLeaderboardEmbed() {
+  const top = voiceActivity.getLeaderboard(10);
+  if (top.length === 0) {
+    return new EmbedBuilder().setColor(0x99aab5).setDescription('📭 Belum ada data aktivitas voice sama sekali.');
+  }
+  const RANK_EMOJI = ['🥇', '🥈', '🥉'];
+  const lines = top.map((entry, i) => {
+    const tier = voiceActivity.getTierInfo(entry.totalSeconds);
+    const rank = RANK_EMOJI[i] || `${i + 1}.`;
+    return `${rank} **${entry.username}** — ${voiceActivity.formatDurationLong(entry.totalSeconds)} ${tier.emoji}`;
+  });
+  return new EmbedBuilder().setColor(0xf1c40f).setTitle('🏆 Voice Leaderboard').setDescription(lines.join('\n'));
 }
 
 async function handlePanelQueue(interaction) {
@@ -841,66 +882,17 @@ client.on('interactionCreate', async (interaction) => {
 
     if (interaction.customId === 'panel_voicestats') {
       try {
-        const stats = voiceActivity.getStats(interaction.user.id);
-        if (!stats) {
-          await interaction.reply({
-            embeds: [new EmbedBuilder().setColor(0x99aab5).setDescription('📭 Kamu belum pernah tercatat aktivitas voice-nya.')],
-            flags: MessageFlags.Ephemeral,
-          });
-          return;
-        }
-        const tier = voiceActivity.getTierInfo(stats.totalSeconds);
-        const progress = voiceActivity.getProgress(stats.totalSeconds);
-        const bar = voiceActivity.renderProgressBar(progress.percent);
-        const progressText = progress.isMax
-          ? `${bar} 100%\nTier tertinggi tercapai! 🎉`
-          : `${bar} ${Math.round(progress.percent * 100)}%\n${progress.hoursRemaining.toFixed(1)} jam lagi menuju ${progress.next.emoji} **${progress.next.title}**`;
-
-        const embed = new EmbedBuilder()
-          .setColor(tier.color)
-          .setAuthor({ name: `Voice Stats — ${interaction.user.username}`, iconURL: interaction.user.displayAvatarURL() })
-          .setThumbnail(interaction.user.displayAvatarURL())
-          .addFields(
-            { name: '🎧 Total Voice Time', value: voiceActivity.formatDurationLong(stats.totalSeconds), inline: true },
-            { name: '🔥 Streak Sekarang', value: `${stats.currentStreak} hari`, inline: true },
-            { name: '🏆 Streak Terpanjang', value: `${stats.longestStreak} hari`, inline: true },
-            { name: 'Title', value: `${tier.emoji} **${tier.title}**`, inline: false },
-            { name: 'Progress ke Tier Berikutnya', value: progressText, inline: false }
-          );
-        if (stats.isActive) embed.setFooter({ text: '🟢 Lagi aktif di voice sekarang' });
-
-        const row = new ActionRowBuilder().addComponents(
-          new ButtonBuilder().setCustomId('panelvs_leaderboard').setLabel('Leaderboard').setEmoji('🏆').setStyle(ButtonStyle.Secondary)
-        );
-        await interaction.reply({ embeds: [embed], components: [row], flags: MessageFlags.Ephemeral });
-      } catch (err) {
-        log(`[PANEL] Error tombol panel_voicestats: ${err?.stack || err}`);
-      }
-      return;
-    }
-
-    if (interaction.customId === 'panelvs_leaderboard') {
-      try {
-        const top = voiceActivity.getLeaderboard(10);
-        if (top.length === 0) {
-          await interaction.reply({
-            embeds: [new EmbedBuilder().setColor(0x99aab5).setDescription('📭 Belum ada data aktivitas voice sama sekali.')],
-            flags: MessageFlags.Ephemeral,
-          });
-          return;
-        }
-        const RANK_EMOJI = ['🥇', '🥈', '🥉'];
-        const lines = top.map((entry, i) => {
-          const tier = voiceActivity.getTierInfo(entry.totalSeconds);
-          const rank = RANK_EMOJI[i] || `${i + 1}.`;
-          return `${rank} **${entry.username}** — ${voiceActivity.formatDurationLong(entry.totalSeconds)} ${tier.emoji}`;
-        });
         await interaction.reply({
-          embeds: [new EmbedBuilder().setColor(0xf1c40f).setTitle('🏆 Voice Leaderboard').setDescription(lines.join('\n'))],
+          embeds: [
+            new EmbedBuilder()
+              .setColor(EMBED_COLOR)
+              .setDescription('📊 Mau tampilkan apa ke channel ini? Pilih dari dropdown di bawah.'),
+          ],
+          components: [buildVoiceStatsSelectRow()],
           flags: MessageFlags.Ephemeral,
         });
       } catch (err) {
-        log(`[PANEL] Error tombol panelvs_leaderboard: ${err?.stack || err}`);
+        log(`[PANEL] Error tombol panel_voicestats: ${err?.stack || err}`);
       }
       return;
     }
@@ -1085,6 +1077,27 @@ client.on('interactionCreate', async (interaction) => {
       return;
     }
 
+    return;
+  }
+
+  // Dropdown "Voice Stats / Leaderboard" dari panel -- hasil yang dipilih
+  // sengaja dikirim PUBLIK ke channel (bukan ephemeral), soalnya statistik
+  // & leaderboard emang enak dilihat bareng-bareng, bukan cuma yang milih.
+  if (interaction.isStringSelectMenu()) {
+    if (interaction.customId === 'panel_voicestats_select') {
+      try {
+        const choice = interaction.values[0];
+        const embed = choice === 'leaderboard' ? buildVoiceLeaderboardEmbed() : buildVoiceStatsEmbed(interaction.user);
+        await interaction.channel.send({ embeds: [embed] });
+        await interaction.update({
+          embeds: [new EmbedBuilder().setColor(0x57f287).setDescription('✅ Ditampilkan ke channel.')],
+          components: [],
+        });
+      } catch (err) {
+        log(`[PANEL] Error dropdown voice stats: ${err?.stack || err}`);
+      }
+      return;
+    }
     return;
   }
 
