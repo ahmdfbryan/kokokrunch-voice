@@ -26,12 +26,12 @@ function buildPanelCard(botAvatarURL) {
     .setAuthor({ name: 'SATPAM PANEL', iconURL: botAvatarURL || undefined })
     .setDescription(
       [
-        'Akses semua fitur bot **Satpam Voice** cukup dari panel ini.',
+        'Akses semua fitur bot Satpam Voice cukup dari panel ini.',
         '',
         '🎵 **Musik** — Play • Skip • Stop • Queue',
         '🎁 **Giveaway** — Buat & pantau giveaway',
-        '📊 **Voice Stats** — Statistik & leaderboard',
         '🔥 **Streak** — Bikin/kelola grup Daily Streak Chat',
+        '📊 **Voice Stats** — Statistik & leaderboard',
         'ℹ️ **Info / Help** — Daftar semua command',
       ].join('\n')
     )
@@ -42,8 +42,8 @@ function buildPanelCard(botAvatarURL) {
   const row1 = new ActionRowBuilder().addComponents(
     new ButtonBuilder().setCustomId('panel_music').setLabel('Musik').setEmoji('🎵').setStyle(ButtonStyle.Primary),
     new ButtonBuilder().setCustomId('panel_giveaway').setLabel('Giveaway').setEmoji('🎁').setStyle(ButtonStyle.Success),
-    new ButtonBuilder().setCustomId('panel_voicestats').setLabel('Voice Stats').setEmoji('📊').setStyle(ButtonStyle.Secondary),
     new ButtonBuilder().setCustomId('panel_streak').setLabel('Streak').setEmoji('🔥').setStyle(ButtonStyle.Danger),
+    new ButtonBuilder().setCustomId('panel_voicestats').setLabel('Voice Stats').setEmoji('📊').setStyle(ButtonStyle.Secondary),
     new ButtonBuilder().setCustomId('panel_help').setLabel('Info/Help').setEmoji('ℹ️').setStyle(ButtonStyle.Secondary)
   );
   const row2 = new ActionRowBuilder().addComponents(
@@ -91,7 +91,7 @@ function buildVoiceStatsSelectRow() {
  */
 function buildStreakSubRow() {
   return new ActionRowBuilder().addComponents(
-    new ButtonBuilder().setCustomId('panelstreak_info').setLabel('Streak').setEmoji('🔥').setStyle(ButtonStyle.Danger),
+    new ButtonBuilder().setCustomId('panelstreak_info').setLabel('Info Streak').setEmoji('🔥').setStyle(ButtonStyle.Danger),
     new ButtonBuilder().setCustomId('panelstreak_create').setLabel('Buat Grup').setEmoji('➕').setStyle(ButtonStyle.Success),
     new ButtonBuilder().setCustomId('panelstreak_mygroup').setLabel('Grup Saya').setEmoji('👥').setStyle(ButtonStyle.Secondary)
   );
