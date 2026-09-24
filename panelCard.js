@@ -7,19 +7,15 @@ const {
 } = require('discord.js');
 
 const PANEL_COLOR = 0x2b2d31;
-// Zero-width-space field dipakai sebagai "penyeimbang" biar 4 field inline
-// kebagi rapi 2 baris x 2 kolom (bukan numpuk 3+1 kayak default Discord).
-const SPACER_FIELD = { name: '​', value: '​', inline: true };
 
 /**
- * Panel utama: embed "premium" bergaya dashboard -- title + tagline singkat,
- * lalu 4 fitur ditata sebagai grid 2x2 (tiap fitur = 1 field, biar rapi &
- * gampang dipindai), thumbnail & footer branded pakai avatar bot. Diikuti
- * 4 tombol kategori (Musik, Giveaway, Voice Stats, Info/Help). Tombol-tombol
- * ini SELALU membalas ephemeral (cuma keliatan yang klik), jadi panel
- * publik yang sticky ini nggak perlu berubah tampilan tiap kali ada yang
- * pencet tombol -- aman buat banyak orang mencet bersamaan tanpa saling
- * ganggu.
+ * Panel utama: embed "premium" tapi SENGAJA nggak pakai field inline sama
+ * sekali -- Discord di HP selalu nge-stack field `inline` jadi satu kolom
+ * penuh (beda dari desktop yang bisa 2-3 kolom sejajar), jadi trik "grid"
+ * pakai field malah bikin jarak/baris kosong aneh di HP. Solusinya: semua
+ * konten taro di description biasa (cuma teks yang wrap), yang render-nya
+ * PERSIS SAMA di HP maupun laptop -- itu yang bikin tampilannya konsisten
+ * bagus di kedua platform.
  *
  * `botAvatarURL` opsional -- dipakai buat author icon, thumbnail & footer
  * icon biar kelihatan lebih "branded", tapi tetap aman kalau nggak disuplai.
@@ -28,14 +24,15 @@ function buildPanelCard(botAvatarURL) {
   const embed = new EmbedBuilder()
     .setColor(PANEL_COLOR)
     .setAuthor({ name: 'SATPAM PANEL', iconURL: botAvatarURL || undefined })
-    .setDescription('Akses semua fitur bot **Satpam Voice** cukup dari panel ini.')
-    .addFields(
-      { name: '🎵  Musik', value: 'Play • Skip • Stop • Queue', inline: true },
-      { name: '🎁  Giveaway', value: 'Buat & pantau giveaway', inline: true },
-      SPACER_FIELD,
-      { name: '📊  Voice Stats', value: 'Statistik & leaderboard', inline: true },
-      { name: 'ℹ️  Info / Help', value: 'Daftar semua command', inline: true },
-      SPACER_FIELD
+    .setDescription(
+      [
+        '_Akses semua fitur bot cukup dari satu tempat ini._',
+        '',
+        '🎵 **Musik** — Play • Skip • Stop • Queue',
+        '🎁 **Giveaway** — Buat & pantau giveaway',
+        '📊 **Voice Stats** — Statistik & leaderboard',
+        'ℹ️ **Info / Help** — Daftar semua command',
+      ].join('\n')
     )
     .setThumbnail(botAvatarURL || null)
     .setFooter({ text: 'KokoKrunch Studios', iconURL: botAvatarURL || undefined })
