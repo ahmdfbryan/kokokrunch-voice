@@ -56,10 +56,10 @@ function buildPanelCard(botAvatarURL) {
   const row2 = new ActionRowBuilder().addComponents(
     new ButtonBuilder().setCustomId('panel_voicestats').setLabel('Voice Stats').setEmoji('📊').setStyle(ButtonStyle.Secondary),
     new ButtonBuilder().setCustomId('panel_ask').setLabel('Tanya AI').setEmoji('🤖').setStyle(ButtonStyle.Primary),
-    new ButtonBuilder().setCustomId('panel_help').setLabel('Info/Help').setEmoji('ℹ️').setStyle(ButtonStyle.Secondary)
+    new ButtonBuilder().setCustomId('panel_idcard').setLabel('ID Card').setEmoji('🪪').setStyle(ButtonStyle.Primary)
   );
   const row3 = new ActionRowBuilder().addComponents(
-    new ButtonBuilder().setCustomId('panel_idcard').setLabel('ID Card').setEmoji('🪪').setStyle(ButtonStyle.Primary),
+    new ButtonBuilder().setCustomId('panel_help').setLabel('Info/Help').setEmoji('ℹ️').setStyle(ButtonStyle.Secondary),
     // Tombol Link (bukan customId) -- diklik langsung buka profil Discord
     // pembuat bot, nggak lewat interactionCreate sama sekali.
     new ButtonBuilder().setLabel('Credit').setEmoji('👤').setStyle(ButtonStyle.Link).setURL('https://discord.com/users/1141222257604182020')
