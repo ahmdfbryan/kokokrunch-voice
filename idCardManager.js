@@ -38,34 +38,19 @@ function formatIdNo(idNo) {
 }
 
 /**
- * Embed "ID Card" -- sengaja full teks di description (BUKAN field
- * inline), biar render-nya konsisten sama persis di HP maupun desktop
- * (pelajaran yang sama kayak layout panel utama -- field inline suka
- * bikin jarak aneh di HP).
+ * Embed pembungkus buat gambar ID Card yang digambar canvas (lihat
+ * idCardImage.js) -- semua data (nama, foto, tanggal, dst) udah tampil di
+ * GAMBARNYA, jadi embed ini sengaja cuma judul singkat + attachment
+ * gambarnya, nggak ngulang isi field lagi dalam bentuk teks.
+ * `attachmentFileName` harus SAMA PERSIS kayak nama file yang dipasang di
+ * AttachmentBuilder pas dikirim (lihat index.js).
  */
-function buildIdCardEmbed(card, discordUser, guildName) {
-  const avatarURL = discordUser.displayAvatarURL({ extension: 'png', size: 512 });
-  const joinDate = card.joinServerAt ? `<t:${Math.floor(card.joinServerAt / 1000)}:D>` : '-';
-  const createdDate = `<t:${Math.floor(card.createdAt / 1000)}:D>`;
-
+function buildIdCardEmbed(card, attachmentFileName) {
   return new EmbedBuilder()
     .setColor(ID_CARD_COLOR)
-    .setAuthor({ name: '🪪  ID CARD — SATPAM VOICE' })
-    .setThumbnail(avatarURL)
-    .setDescription(
-      [
-        `**ID No:** \`${formatIdNo(card.idNo)}\``,
-        `**Nama:** ${card.nama}`,
-        `**Jenis Kelamin:** ${card.jenisKelamin}`,
-        `**Domisili:** ${card.domisili}`,
-        `**Cita-Cita:** ${card.citaCita}`,
-        `**Hobi:** ${card.hobi}`,
-        '',
-        `**Join Server:** ${joinDate}`,
-        `**Dibuat Tanggal:** ${createdDate}`,
-      ].join('\n')
-    )
-    .setFooter({ text: guildName ? `${guildName} • KokoKrunch Studios` : 'KokoKrunch Studios' });
+    .setAuthor({ name: `🪪  ID Card — ${formatIdNo(card.idNo)}` })
+    .setImage(`attachment://${attachmentFileName}`)
+    .setFooter({ text: 'KokoKrunch Studios' });
 }
 
 module.exports = {
