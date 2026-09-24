@@ -5,7 +5,7 @@
 
 const { EmbedBuilder } = require('discord.js');
 
-const ID_CARD_COLOR = 0x1b2838; // navy gelap, senada branding "Satpam Voice"
+const ID_CARD_COLOR = 0x3b82f6; // biru, senada aksen di gambar kartunya
 const FIELD_MAX_LENGTH = 100;
 
 // Urutan & label field yang diinput lewat modal "Buat ID" -- dipakai juga
@@ -50,7 +50,10 @@ function buildIdCardEmbed(card, attachmentFileName) {
     .setColor(ID_CARD_COLOR)
     .setAuthor({ name: `🪪  ID Card — ${formatIdNo(card.idNo)}` })
     .setImage(`attachment://${attachmentFileName}`)
-    .setFooter({ text: 'KokoKrunch Studios' });
+    .setFooter({ text: 'KokoKrunch Studios' })
+    // setTimestamp() bikin Discord otomatis nampilin "• Today at HH:MM AM/PM"
+    // (atau tanggalnya kalau bukan hari ini) di sebelah teks footer.
+    .setTimestamp();
 }
 
 module.exports = {
