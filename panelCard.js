@@ -26,7 +26,7 @@ function buildPanelCard(botAvatarURL) {
     .setAuthor({ name: 'SATPAM PANEL', iconURL: botAvatarURL || undefined })
     .setDescription(
       [
-        '_Akses semua fitur bot cukup dari satu tempat ini._',
+        'Akses semua fitur bot **Satpam Voice** cukup dari panel ini.',
         '',
         '🎵 **Musik** — Play • Skip • Stop • Queue',
         '🎁 **Giveaway** — Buat & pantau giveaway',
