@@ -44,9 +44,18 @@ const permissions = require('./permissions');
 const voteManager = require('./voteManager');
 const commands = require('./commands');
 const panelStore = require('./panelStore');
-const { buildPanelCard, buildMusicSubRow, buildVoiceStatsSelectRow, buildStreakSubRow, PANEL_COLOR } = require('./panelCard');
+const {
+  buildPanelCard,
+  buildMusicSubRow,
+  buildVoiceStatsSelectRow,
+  buildStreakSubRow,
+  buildIdCardSubRow,
+  PANEL_COLOR,
+} = require('./panelCard');
 const streakStore = require('./streakStore');
 const streakManager = require('./streakManager');
+const idCardStore = require('./idCardStore');
+const idCardManager = require('./idCardManager');
 const { COLOR, textEmbed } = require('./musicFormat');
 const { buildCommandsListEmbed } = require('./commandsList');
 const { buildLeaderboardEmbed } = require('./voiceActivityCommands');
@@ -492,6 +501,7 @@ stickyMessage.load();
 stickyManager.init(client, log);
 panelStore.load();
 streakStore.load();
+idCardStore.load();
 aiChat.init(log);
 
 const panelApi = { repositionChannelStack };
@@ -939,6 +949,87 @@ client.on('interactionCreate', async (interaction) => {
     }
 
     // ============================================================
+    // ID CARD: tombol "ID Card" di panel utama -> munculin 2 pilihan
+    // (Buat ID, Lihat ID Saya). ID No/Join Server/Dibuat Tanggal/foto
+    // profil digenerate otomatis, cuma 5 field yang diisi manual lewat
+    // modal (Nama, Jenis Kelamin, Domisili, Cita-Cita, Hobi).
+    // ============================================================
+    if (interaction.customId === 'panel_idcard') {
+      try {
+        await interaction.reply({
+          embeds: [
+            new EmbedBuilder()
+              .setColor(PANEL_COLOR)
+              .setAuthor({ name: '🪪  ID Card Satpam Voice' })
+              .setDescription('Bikin kartu identitas kamu sendiri, atau lihat yang udah pernah dibuat.'),
+          ],
+          components: [buildIdCardSubRow()],
+          flags: MessageFlags.Ephemeral,
+        });
+      } catch (err) {
+        log(`[PANEL] Error tombol panel_idcard: ${err?.stack || err}`);
+      }
+      return;
+    }
+
+    if (interaction.customId === 'panelid_create') {
+      try {
+        if (idCardStore.hasCard(interaction.guildId, interaction.user.id)) {
+          await interaction.reply({
+            embeds: [
+              new EmbedBuilder()
+                .setColor(0x99aab5)
+                .setDescription('Kamu udah punya ID Card. Klik **Lihat ID Saya** buat liat punya kamu.'),
+            ],
+            flags: MessageFlags.Ephemeral,
+          });
+          return;
+        }
+
+        const modal = new ModalBuilder().setCustomId('panel_idcard_modal').setTitle('Buat ID Card');
+        modal.addComponents(
+          ...idCardManager.INPUT_FIELDS.map((field) =>
+            new ActionRowBuilder().addComponents(
+              new TextInputBuilder()
+                .setCustomId(field.customId)
+                .setLabel(field.label)
+                .setStyle(TextInputStyle.Short)
+                .setRequired(true)
+                .setMaxLength(idCardManager.FIELD_MAX_LENGTH)
+            )
+          )
+        );
+        await interaction.showModal(modal);
+      } catch (err) {
+        log(`[PANEL] Error tombol panelid_create: ${err?.stack || err}`);
+      }
+      return;
+    }
+
+    if (interaction.customId === 'panelid_view') {
+      try {
+        const card = idCardStore.getCard(interaction.guildId, interaction.user.id);
+        if (!card) {
+          await interaction.reply({
+            embeds: [
+              new EmbedBuilder()
+                .setColor(0x99aab5)
+                .setDescription('Kamu belum punya ID Card. Klik **Buat ID** buat bikin sekarang.'),
+            ],
+            flags: MessageFlags.Ephemeral,
+          });
+          return;
+        }
+
+        const embed = idCardManager.buildIdCardEmbed(card, interaction.user, interaction.guild?.name);
+        await interaction.reply({ embeds: [embed], flags: MessageFlags.Ephemeral });
+      } catch (err) {
+        log(`[PANEL] Error tombol panelid_view: ${err?.stack || err}`);
+      }
+      return;
+    }
+
+    // ============================================================
     // STREAK: tombol "Streak" di panel utama -> munculin 3 pilihan
     // (Streak/info, Buat Grup, Grup Saya). Deteksi checkin-nya sendiri
     // jalan otomatis lewat listener messageCreate di atas, nggak ada
@@ -1226,6 +1317,45 @@ client.on('interactionCreate', async (interaction) => {
         await aiCommands.performAsk(interaction, question);
       } catch (err) {
         log(`[PANEL] Error tanya AI dari panel: ${err?.stack || err}`);
+      }
+      return;
+    }
+
+    if (interaction.customId === 'panel_idcard_modal') {
+      try {
+        if (idCardStore.hasCard(interaction.guildId, interaction.user.id)) {
+          await interaction.reply({
+            content: 'Kamu udah punya ID Card. Klik **Lihat ID Saya** buat liat punya kamu.',
+            flags: MessageFlags.Ephemeral,
+          });
+          return;
+        }
+
+        const fields = {};
+        for (const field of idCardManager.INPUT_FIELDS) {
+          const raw = interaction.fields.getTextInputValue(field.customId);
+          const check = idCardManager.sanitizeField(raw);
+          if (!check.ok) {
+            const msg =
+              check.reason === 'too_long'
+                ? `${field.label} maksimal ${idCardManager.FIELD_MAX_LENGTH} karakter.`
+                : `${field.label} nggak boleh kosong.`;
+            await interaction.reply({ content: msg, flags: MessageFlags.Ephemeral });
+            return;
+          }
+          fields[field.key] = check.value;
+        }
+
+        const joinServerAt = interaction.member?.joinedTimestamp || null;
+        const card = idCardStore.createCard(interaction.guildId, interaction.user.id, fields, joinServerAt);
+        const embed = idCardManager.buildIdCardEmbed(card, interaction.user, interaction.guild?.name);
+        await interaction.reply({
+          content: '✅ ID Card berhasil dibuat!',
+          embeds: [embed],
+          flags: MessageFlags.Ephemeral,
+        });
+      } catch (err) {
+        log(`[PANEL] Error panel_idcard_modal: ${err?.stack || err}`);
       }
       return;
     }
