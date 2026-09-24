@@ -11,7 +11,7 @@ const MIN_MEMBERS_TO_START = 3;
 const REQUIRED_CHECKINS = 2;
 const MAX_MEMBERS = 15;
 const MAX_NAME_LENGTH = 32;
-const STREAK_COLOR = 0xff6b35;
+const STREAK_COLOR = 0x3b82f6; // biru, senada sama warna panel & ID Card
 const LEADERBOARD_RANK_ICONS = ['🥇', '🥈', '🥉', '4️⃣', '5️⃣', '6️⃣', '7️⃣', '8️⃣', '9️⃣', '🔟'];
 
 /**
