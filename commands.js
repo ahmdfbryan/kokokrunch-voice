@@ -9,6 +9,97 @@ const { COLOR, textEmbed, formatEta, formatTotalDuration } = require('./musicFor
 const PLAYLIST_MAX_TRACKS = 100;
 const PLAYLIST_PREVIEW_COUNT = 10;
 
+/**
+ * Logika inti /play, diekstrak jadi fungsi sendiri biar bisa dipakai ulang
+ * dari sumber lain juga (bukan cuma slash command /play) -- misalnya dari
+ * modal "Play" di panel bot. `interaction` harus SUDAH di-deferReply()
+ * (non-ephemeral) sebelum manggil ini, soalnya di sini pakai editReply().
+ */
+async function performPlay(interaction, input, log) {
+  // Playlist YouTube: tambahin SEMUA lagu di dalamnya sekaligus, beda
+  // alur dari single track biasa.
+  if (isPlaylistUrl(input)) {
+    let tracks;
+    try {
+      tracks = await resolvePlaylist(input, PLAYLIST_MAX_TRACKS);
+    } catch (err) {
+      log(`[MUSIC] Resolve playlist gagal: ${err.message}`);
+      await interaction.editReply({ embeds: [textEmbed(err.message)] });
+      return;
+    }
+
+    tracks.forEach((t) => {
+      t.requestedBy = interaction.user.tag;
+      t.requestedById = interaction.user.id;
+    });
+
+    musicManager.setTextChannel(interaction.guildId, interaction.channelId);
+    const { etaList, startedImmediately } = musicManager.enqueueMany(interaction.guildId, tracks);
+
+    const totalSeconds = tracks.reduce((sum, t) => sum + (t.durationSeconds || 0), 0);
+    const firstEtaSeconds = etaList[0]?.etaSeconds ?? 0;
+
+    const titleList = etaList
+      .slice(0, PLAYLIST_PREVIEW_COUNT)
+      .map((e, i) => `${i + 1}. ${e.track.title}`)
+      .join('\n');
+    const extra = etaList.length > PLAYLIST_PREVIEW_COUNT ? `\n...dan ${etaList.length - PLAYLIST_PREVIEW_COUNT} lagu lainnya` : '';
+
+    const embed = new EmbedBuilder()
+      .setColor(COLOR)
+      .setTitle('Playlist Ditambahkan')
+      .setDescription(
+        `${tracks.length} lagu dari playlist ditambahkan ke antrian.\n\n` +
+          `${titleList}${extra}\n\n` +
+          `Track Length: ${formatTotalDuration(totalSeconds)}\n` +
+          `Estimated time until played: ${formatEta(firstEtaSeconds)}`
+      );
+    await interaction.editReply({ embeds: [embed] });
+
+    // Kalau playlist ini langsung mulai main (antrian kosong sebelumnya),
+    // susulin dengan card "Now Playing" interaktif buat lagu pertamanya.
+    if (startedImmediately) {
+      await claimNowPlayingCard(interaction.guildId, interaction.client, (embed, components) =>
+        interaction.channel.send({ embeds: [embed], components })
+      );
+    }
+    return;
+  }
+
+  let track;
+  try {
+    track = await resolveTrack(input);
+  } catch (err) {
+    log(`[MUSIC] Resolve gagal: ${err.message}`);
+    await interaction.editReply({ embeds: [textEmbed(err.message)] });
+    return;
+  }
+
+  track.requestedBy = interaction.user.tag;
+  track.requestedById = interaction.user.id;
+
+  musicManager.setTextChannel(interaction.guildId, interaction.channelId);
+  const { position, startedImmediately, etaSeconds } = musicManager.enqueue(interaction.guildId, track);
+
+  if (startedImmediately) {
+    await claimNowPlayingCard(interaction.guildId, interaction.client, (embed, components) =>
+      interaction.editReply({ embeds: [embed], components })
+    );
+  } else {
+    const embed = new EmbedBuilder()
+      .setColor(COLOR)
+      .setDescription(`**${track.title}** ditambahkan ke antrian`)
+      .setThumbnail(track.thumbnail || null)
+      .addFields(
+        { name: 'Estimated time until played', value: formatEta(etaSeconds), inline: true },
+        { name: 'Track Length', value: track.durationText || '?', inline: true },
+        { name: 'Position in queue', value: `#${position}`, inline: true },
+        { name: 'Request by', value: track.requestedBy, inline: true }
+      );
+    await interaction.editReply({ embeds: [embed] });
+  }
+}
+
 const commands = [
   {
     data: new SlashCommandBuilder()
@@ -19,91 +110,8 @@ const commands = [
       ),
     async execute(interaction, log) {
       await interaction.deferReply();
-
       const input = interaction.options.getString('input', true);
-
-      // Playlist YouTube: tambahin SEMUA lagu di dalamnya sekaligus, beda
-      // alur dari single track biasa.
-      if (isPlaylistUrl(input)) {
-        let tracks;
-        try {
-          tracks = await resolvePlaylist(input, PLAYLIST_MAX_TRACKS);
-        } catch (err) {
-          log(`[MUSIC] Resolve playlist gagal: ${err.message}`);
-          await interaction.editReply({ embeds: [textEmbed(err.message)] });
-          return;
-        }
-
-        tracks.forEach((t) => {
-          t.requestedBy = interaction.user.tag;
-          t.requestedById = interaction.user.id;
-        });
-
-        musicManager.setTextChannel(interaction.guildId, interaction.channelId);
-        const { etaList, startedImmediately } = musicManager.enqueueMany(interaction.guildId, tracks);
-
-        const totalSeconds = tracks.reduce((sum, t) => sum + (t.durationSeconds || 0), 0);
-        const firstEtaSeconds = etaList[0]?.etaSeconds ?? 0;
-
-        const titleList = etaList
-          .slice(0, PLAYLIST_PREVIEW_COUNT)
-          .map((e, i) => `${i + 1}. ${e.track.title}`)
-          .join('\n');
-        const extra = etaList.length > PLAYLIST_PREVIEW_COUNT ? `\n...dan ${etaList.length - PLAYLIST_PREVIEW_COUNT} lagu lainnya` : '';
-
-        const embed = new EmbedBuilder()
-          .setColor(COLOR)
-          .setTitle('Playlist Ditambahkan')
-          .setDescription(
-            `${tracks.length} lagu dari playlist ditambahkan ke antrian.\n\n` +
-              `${titleList}${extra}\n\n` +
-              `Track Length: ${formatTotalDuration(totalSeconds)}\n` +
-              `Estimated time until played: ${formatEta(firstEtaSeconds)}`
-          );
-        await interaction.editReply({ embeds: [embed] });
-
-        // Kalau playlist ini langsung mulai main (antrian kosong sebelumnya),
-        // susulin dengan card "Now Playing" interaktif buat lagu pertamanya.
-        if (startedImmediately) {
-          await claimNowPlayingCard(interaction.guildId, interaction.client, (embed, components) =>
-            interaction.channel.send({ embeds: [embed], components })
-          );
-        }
-        return;
-      }
-
-      let track;
-      try {
-        track = await resolveTrack(input);
-      } catch (err) {
-        log(`[MUSIC] Resolve gagal: ${err.message}`);
-        await interaction.editReply({ embeds: [textEmbed(err.message)] });
-        return;
-      }
-
-      track.requestedBy = interaction.user.tag;
-      track.requestedById = interaction.user.id;
-
-      musicManager.setTextChannel(interaction.guildId, interaction.channelId);
-      const { position, startedImmediately, etaSeconds } = musicManager.enqueue(interaction.guildId, track);
-
-      if (startedImmediately) {
-        await claimNowPlayingCard(interaction.guildId, interaction.client, (embed, components) =>
-          interaction.editReply({ embeds: [embed], components })
-        );
-      } else {
-        const embed = new EmbedBuilder()
-          .setColor(COLOR)
-          .setDescription(`**${track.title}** ditambahkan ke antrian`)
-          .setThumbnail(track.thumbnail || null)
-          .addFields(
-            { name: 'Estimated time until played', value: formatEta(etaSeconds), inline: true },
-            { name: 'Track Length', value: track.durationText || '?', inline: true },
-            { name: 'Position in queue', value: `#${position}`, inline: true },
-            { name: 'Request by', value: track.requestedBy, inline: true }
-          );
-        await interaction.editReply({ embeds: [embed] });
-      }
+      await performPlay(interaction, input, log);
     },
   },
 
@@ -312,7 +320,10 @@ module.exports = [
   ...require('./nowPlayingCommand'),
   ...require('./voiceActivityCommands'),
   ...require('./stickyCommands'),
+  ...require('./panelCommands'),
   ...require('./giveawayCommands'),
   ...require('./aiCommands'),
   ...require('./commandsList'),
 ];
+
+module.exports.performPlay = performPlay;
