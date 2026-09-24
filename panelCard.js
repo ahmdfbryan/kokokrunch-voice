@@ -34,6 +34,7 @@ function buildPanelCard(botAvatarURL) {
         '📊 **Voice Stats** — Statistik & leaderboard',
         '🤖 **Tanya AI** — Tanya apa aja ke AI bot',
         'ℹ️ **Info / Help** — Daftar semua command',
+        '🪪 **ID Card** — Buat & lihat kartu identitas Satpam Voice kamu',
       ].join('\n')
     )
     .setThumbnail(botAvatarURL || null)
@@ -58,6 +59,7 @@ function buildPanelCard(botAvatarURL) {
     new ButtonBuilder().setCustomId('panel_help').setLabel('Info/Help').setEmoji('ℹ️').setStyle(ButtonStyle.Secondary)
   );
   const row3 = new ActionRowBuilder().addComponents(
+    new ButtonBuilder().setCustomId('panel_idcard').setLabel('ID Card').setEmoji('🪪').setStyle(ButtonStyle.Primary),
     // Tombol Link (bukan customId) -- diklik langsung buka profil Discord
     // pembuat bot, nggak lewat interactionCreate sama sekali.
     new ButtonBuilder().setLabel('Credit').setEmoji('👤').setStyle(ButtonStyle.Link).setURL('https://discord.com/users/1141222257604182020')
@@ -110,4 +112,22 @@ function buildStreakSubRow() {
   );
 }
 
-module.exports = { buildPanelCard, buildMusicSubRow, buildVoiceStatsSelectRow, buildStreakSubRow, PANEL_COLOR };
+/**
+ * Baris 2 tombol pilihan buat fitur ID Card, dipakai di balasan ephemeral
+ * pas tombol "ID Card" di panel utama diklik.
+ */
+function buildIdCardSubRow() {
+  return new ActionRowBuilder().addComponents(
+    new ButtonBuilder().setCustomId('panelid_create').setLabel('Buat ID').setEmoji('🆕').setStyle(ButtonStyle.Success),
+    new ButtonBuilder().setCustomId('panelid_view').setLabel('Lihat ID Saya').setEmoji('🪪').setStyle(ButtonStyle.Secondary)
+  );
+}
+
+module.exports = {
+  buildPanelCard,
+  buildMusicSubRow,
+  buildVoiceStatsSelectRow,
+  buildStreakSubRow,
+  buildIdCardSubRow,
+  PANEL_COLOR,
+};
