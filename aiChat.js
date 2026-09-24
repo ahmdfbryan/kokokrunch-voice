@@ -391,24 +391,24 @@ async function handleFunctionCallOrText(response, historyForContext, ctx) {
 }
 
 /**
- * Tanya-jawab sekali, tanpa nyimpen konteks percakapan. Dipakai buat /ask.
- * `ctx` = { guildId, channelId, userId, userTag, client } -- dibutuhin
- * kalau AI-nya mutusin buat manggil salah satu tools (play musik dll).
+ * Tanya-jawab lewat /ask (atau tombol "Tanya AI" di panel). SEBELUMNYA ini
+ * stateless (nggak nyambung sama sekali ke history obrolan mention-chat),
+ * makanya kerasa "ga 1 pikiran" pas gantian antara /ask dan mention di
+ * channel yang sama. Sekarang /ask ikut baca & nulis ke sesi obrolan yang
+ * SAMA PERSIS kayak mention-chat (per-guild, lihat chatReply) biar
+ * nyambung dua arah -- nanya lewat /ask lalu nyambungin lewat mention (atau
+ * sebaliknya) tetep satu konteks percakapan yang sama.
  */
 async function askOnce(prompt, ctx) {
-  const response = await callGeminiWithRetry(() =>
-    ai.models.generateContent({
-      model: MODEL,
-      contents: prompt,
-      config: { systemInstruction: SYSTEM_PROMPT, tools: [{ functionDeclarations: aiTools.TOOL_DECLARATIONS }] },
-    })
-  );
-  return handleFunctionCallOrText(response, [{ role: 'user', parts: [{ text: prompt }] }], ctx);
+  return chatReply(prompt, ctx);
 }
 
 /**
- * Chat multi-turn per user (inget percakapan sebelumnya). Dipakai buat
- * fitur mention-chat. `ctx` sama kayak di askOnce.
+ * Chat multi-turn yang dipakai bareng oleh /ask, tombol "Tanya AI" di
+ * panel, MAUPUN fitur mention-chat -- semuanya baca/nulis ke sesi yang
+ * sama per-guild (lihat komentar di atas `sessions`), biar percakapannya
+ * kerasa nyambung nggak peduli lewat cara mana user nanya. `ctx` sama
+ * kayak di askOnce.
  */
 /**
  * Chat multi-turn yang dipakai BARENG semua orang di 1 server (inget
