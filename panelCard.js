@@ -7,42 +7,36 @@ const {
 } = require('discord.js');
 
 const PANEL_COLOR = 0x2b2d31;
-const DIVIDER = '▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬';
+// Zero-width-space field dipakai sebagai "penyeimbang" biar 4 field inline
+// kebagi rapi 2 baris x 2 kolom (bukan numpuk 3+1 kayak default Discord).
+const SPACER_FIELD = { name: '​', value: '​', inline: true };
 
 /**
- * Panel utama: embed keterangan "premium" (author + thumbnail icon bot,
- * section per fitur, divider, footer branding) + 4 tombol kategori (Musik,
- * Giveaway, Voice Stats, Info/Help). Tombol-tombol ini SELALU membalas
- * ephemeral (cuma keliatan yang klik), jadi panel publik yang sticky ini
- * nggak perlu berubah tampilan tiap kali ada yang pencet tombol -- aman
- * buat banyak orang mencet bersamaan tanpa saling ganggu.
+ * Panel utama: embed "premium" bergaya dashboard -- title + tagline singkat,
+ * lalu 4 fitur ditata sebagai grid 2x2 (tiap fitur = 1 field, biar rapi &
+ * gampang dipindai), thumbnail & footer branded pakai avatar bot. Diikuti
+ * 4 tombol kategori (Musik, Giveaway, Voice Stats, Info/Help). Tombol-tombol
+ * ini SELALU membalas ephemeral (cuma keliatan yang klik), jadi panel
+ * publik yang sticky ini nggak perlu berubah tampilan tiap kali ada yang
+ * pencet tombol -- aman buat banyak orang mencet bersamaan tanpa saling
+ * ganggu.
  *
- * `botAvatarURL` opsional -- dipakai buat author icon & footer icon biar
- * kelihatan lebih "branded", tapi tetap aman kalau nggak disuplai.
+ * `botAvatarURL` opsional -- dipakai buat author icon, thumbnail & footer
+ * icon biar kelihatan lebih "branded", tapi tetap aman kalau nggak disuplai.
  */
 function buildPanelCard(botAvatarURL) {
   const embed = new EmbedBuilder()
     .setColor(PANEL_COLOR)
-    .setAuthor({ name: '🛡️  SATPAM VOICE — CONTROL PANEL', iconURL: botAvatarURL || undefined })
-    .setDescription(
-      [
-        '_Semua yang kamu butuhkan, satu tombol jauhnya._',
-        DIVIDER,
-        '',
-        '🎵  **MUSIK**',
-        '> Play, Skip, Stop, dan lihat antrian yang lagi jalan.',
-        '',
-        '🎁  **GIVEAWAY**',
-        '> Bikin giveaway baru atau intip yang lagi aktif.',
-        '',
-        '📊  **VOICE STATS**',
-        '> Statistik & leaderboard aktivitas voice channel.',
-        '',
-        'ℹ️  **INFO / HELP**',
-        '> Daftar lengkap semua command bot.',
-        '',
-        DIVIDER,
-      ].join('\n')
+    .setAuthor({ name: 'SATPAM VOICE', iconURL: botAvatarURL || undefined })
+    .setTitle('🛡️ Control Panel')
+    .setDescription('_Akses semua fitur bot cukup dari satu tempat ini._')
+    .addFields(
+      { name: '🎵  Musik', value: 'Play • Skip • Stop • Queue', inline: true },
+      { name: '🎁  Giveaway', value: 'Buat & pantau giveaway', inline: true },
+      SPACER_FIELD,
+      { name: '📊  Voice Stats', value: 'Statistik & leaderboard', inline: true },
+      { name: 'ℹ️  Info / Help', value: 'Daftar semua command', inline: true },
+      SPACER_FIELD
     )
     .setThumbnail(botAvatarURL || null)
     .setFooter({ text: 'KokoKrunch Studios • Satpam Voice Panel', iconURL: botAvatarURL || undefined })
@@ -88,4 +82,4 @@ function buildVoiceStatsSelectRow() {
   return new ActionRowBuilder().addComponents(menu);
 }
 
-module.exports = { buildPanelCard, buildMusicSubRow, buildVoiceStatsSelectRow };
+module.exports = { buildPanelCard, buildMusicSubRow, buildVoiceStatsSelectRow, PANEL_COLOR };
