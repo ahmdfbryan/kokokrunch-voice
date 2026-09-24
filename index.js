@@ -42,7 +42,7 @@ const permissions = require('./permissions');
 const voteManager = require('./voteManager');
 const commands = require('./commands');
 const panelStore = require('./panelStore');
-const { buildPanelCard, buildMusicSubRow, buildVoiceStatsSelectRow } = require('./panelCard');
+const { buildPanelCard, buildMusicSubRow, buildVoiceStatsSelectRow, PANEL_COLOR } = require('./panelCard');
 const { COLOR, textEmbed } = require('./musicFormat');
 const { buildCommandsListEmbed } = require('./commandsList');
 
@@ -850,7 +850,13 @@ client.on('interactionCreate', async (interaction) => {
     if (interaction.customId === 'panel_music') {
       try {
         await interaction.reply({
-          embeds: [new EmbedBuilder().setColor(EMBED_COLOR).setDescription('🎵 Kontrol musik cepat:')],
+          embeds: [
+            new EmbedBuilder()
+              .setColor(PANEL_COLOR)
+              .setAuthor({ name: '🎵  Kontrol Musik' })
+              .setDescription('Pilih aksi di bawah ini.')
+              .setFooter({ text: 'Satpam Voice Panel' }),
+          ],
           components: [buildMusicSubRow()],
           flags: MessageFlags.Ephemeral,
         });
@@ -870,7 +876,13 @@ client.on('interactionCreate', async (interaction) => {
             : [])
         );
         await interaction.reply({
-          embeds: [new EmbedBuilder().setColor(EMBED_COLOR).setDescription('🎁 Kelola giveaway di server ini:')],
+          embeds: [
+            new EmbedBuilder()
+              .setColor(PANEL_COLOR)
+              .setAuthor({ name: '🎁  Giveaway' })
+              .setDescription('Kelola giveaway di server ini.')
+              .setFooter({ text: 'Satpam Voice Panel' }),
+          ],
           components: [row],
           flags: MessageFlags.Ephemeral,
         });
@@ -885,8 +897,10 @@ client.on('interactionCreate', async (interaction) => {
         await interaction.reply({
           embeds: [
             new EmbedBuilder()
-              .setColor(EMBED_COLOR)
-              .setDescription('📊 Mau tampilkan apa ke channel ini? Pilih dari dropdown di bawah.'),
+              .setColor(PANEL_COLOR)
+              .setAuthor({ name: '📊  Voice Stats' })
+              .setDescription('Mau tampilkan apa ke channel ini? Pilih dari dropdown di bawah.')
+              .setFooter({ text: 'Hasilnya bakal dikirim publik ke channel, bukan cuma buat kamu.' }),
           ],
           components: [buildVoiceStatsSelectRow()],
           flags: MessageFlags.Ephemeral,
@@ -912,14 +926,25 @@ client.on('interactionCreate', async (interaction) => {
         const all = giveawayManager.loadAll();
         const active = all.filter((g) => g.guildId === interaction.guildId && !g.ended);
         if (active.length === 0) {
-          await interaction.reply({ content: 'Tidak ada giveaway aktif saat ini.', flags: MessageFlags.Ephemeral });
+          await interaction.reply({
+            embeds: [new EmbedBuilder().setColor(PANEL_COLOR).setDescription('📭 Tidak ada giveaway aktif saat ini.')],
+            flags: MessageFlags.Ephemeral,
+          });
           return;
         }
         const lines = active.map(
           (g) =>
-            `• **${g.prize}** — ID \`${g.id}\` — <#${g.channelId}> — berakhir <t:${Math.floor(g.endTime / 1000)}:R> — ${g.participants.length} peserta`
+            `**${g.prize}**\n> ID \`${g.id}\` • <#${g.channelId}> • berakhir <t:${Math.floor(g.endTime / 1000)}:R> • ${g.participants.length} peserta`
         );
-        await interaction.reply({ content: lines.join('\n'), flags: MessageFlags.Ephemeral });
+        await interaction.reply({
+          embeds: [
+            new EmbedBuilder()
+              .setColor(PANEL_COLOR)
+              .setAuthor({ name: `🎁  Giveaway Aktif (${active.length})` })
+              .setDescription(lines.join('\n\n')),
+          ],
+          flags: MessageFlags.Ephemeral,
+        });
       } catch (err) {
         log(`[PANEL] Error tombol panelgw_list: ${err?.stack || err}`);
       }
