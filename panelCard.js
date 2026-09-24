@@ -32,6 +32,7 @@ function buildPanelCard(botAvatarURL) {
         '🎁 **Giveaway** — Buat & pantau giveaway',
         '🔥 **Streak** — Bikin/kelola grup Daily Streak Chat',
         '📊 **Voice Stats** — Statistik & leaderboard',
+        '🤖 **Tanya AI** — Tanya apa aja ke AI bot',
         'ℹ️ **Info / Help** — Daftar semua command',
       ].join('\n')
     )
@@ -39,20 +40,26 @@ function buildPanelCard(botAvatarURL) {
     .setFooter({ text: 'KokoKrunch Studios', iconURL: botAvatarURL || undefined })
     .setTimestamp();
 
+  // Discord batasin maks 5 tombol per row, jadi tombol utama dipecah jadi
+  // 2 baris -- "Tanya AI" sengaja ditaro di awal row2 biar tetep persis
+  // sebelum "Info/Help".
   const row1 = new ActionRowBuilder().addComponents(
     new ButtonBuilder().setCustomId('panel_music').setLabel('Musik').setEmoji('🎵').setStyle(ButtonStyle.Primary),
     new ButtonBuilder().setCustomId('panel_giveaway').setLabel('Giveaway').setEmoji('🎁').setStyle(ButtonStyle.Success),
     new ButtonBuilder().setCustomId('panel_streak').setLabel('Streak').setEmoji('🔥').setStyle(ButtonStyle.Danger),
-    new ButtonBuilder().setCustomId('panel_voicestats').setLabel('Voice Stats').setEmoji('📊').setStyle(ButtonStyle.Secondary),
-    new ButtonBuilder().setCustomId('panel_help').setLabel('Info/Help').setEmoji('ℹ️').setStyle(ButtonStyle.Secondary)
+    new ButtonBuilder().setCustomId('panel_voicestats').setLabel('Voice Stats').setEmoji('📊').setStyle(ButtonStyle.Secondary)
   );
   const row2 = new ActionRowBuilder().addComponents(
+    new ButtonBuilder().setCustomId('panel_ask').setLabel('Tanya AI').setEmoji('🤖').setStyle(ButtonStyle.Primary),
+    new ButtonBuilder().setCustomId('panel_help').setLabel('Info/Help').setEmoji('ℹ️').setStyle(ButtonStyle.Secondary)
+  );
+  const row3 = new ActionRowBuilder().addComponents(
     // Tombol Link (bukan customId) -- diklik langsung buka profil Discord
     // pembuat bot, nggak lewat interactionCreate sama sekali.
     new ButtonBuilder().setLabel('Credit').setEmoji('👤').setStyle(ButtonStyle.Link).setURL('https://discord.com/users/1141222257604182020')
   );
 
-  return { embed, components: [row1, row2] };
+  return { embed, components: [row1, row2, row3] };
 }
 
 /**
