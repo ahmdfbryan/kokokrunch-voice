@@ -31,6 +31,7 @@ function buildPanelCard(botAvatarURL) {
         '🎵 **Musik** — Play • Skip • Stop • Queue',
         '🎁 **Giveaway** — Buat & pantau giveaway',
         '📊 **Voice Stats** — Statistik & leaderboard',
+        '🔥 **Streak** — Bikin/kelola grup Daily Streak Chat',
         'ℹ️ **Info / Help** — Daftar semua command',
       ].join('\n')
     )
@@ -38,17 +39,20 @@ function buildPanelCard(botAvatarURL) {
     .setFooter({ text: 'KokoKrunch Studios', iconURL: botAvatarURL || undefined })
     .setTimestamp();
 
-  const row = new ActionRowBuilder().addComponents(
+  const row1 = new ActionRowBuilder().addComponents(
     new ButtonBuilder().setCustomId('panel_music').setLabel('Musik').setEmoji('🎵').setStyle(ButtonStyle.Primary),
     new ButtonBuilder().setCustomId('panel_giveaway').setLabel('Giveaway').setEmoji('🎁').setStyle(ButtonStyle.Success),
     new ButtonBuilder().setCustomId('panel_voicestats').setLabel('Voice Stats').setEmoji('📊').setStyle(ButtonStyle.Secondary),
-    new ButtonBuilder().setCustomId('panel_help').setLabel('Info/Help').setEmoji('ℹ️').setStyle(ButtonStyle.Secondary),
+    new ButtonBuilder().setCustomId('panel_streak').setLabel('Streak').setEmoji('🔥').setStyle(ButtonStyle.Danger),
+    new ButtonBuilder().setCustomId('panel_help').setLabel('Info/Help').setEmoji('ℹ️').setStyle(ButtonStyle.Secondary)
+  );
+  const row2 = new ActionRowBuilder().addComponents(
     // Tombol Link (bukan customId) -- diklik langsung buka profil Discord
     // pembuat bot, nggak lewat interactionCreate sama sekali.
     new ButtonBuilder().setLabel('Credit').setEmoji('👤').setStyle(ButtonStyle.Link).setURL('https://discord.com/users/1141222257604182020')
   );
 
-  return { embed, components: [row] };
+  return { embed, components: [row1, row2] };
 }
 
 /**
@@ -81,4 +85,16 @@ function buildVoiceStatsSelectRow() {
   return new ActionRowBuilder().addComponents(menu);
 }
 
-module.exports = { buildPanelCard, buildMusicSubRow, buildVoiceStatsSelectRow, PANEL_COLOR };
+/**
+ * Baris 3 tombol pilihan buat fitur Streak, dipakai di balasan ephemeral
+ * pas tombol "Streak" di panel utama diklik.
+ */
+function buildStreakSubRow() {
+  return new ActionRowBuilder().addComponents(
+    new ButtonBuilder().setCustomId('panelstreak_info').setLabel('Streak').setEmoji('🔥').setStyle(ButtonStyle.Danger),
+    new ButtonBuilder().setCustomId('panelstreak_create').setLabel('Buat Grup').setEmoji('➕').setStyle(ButtonStyle.Success),
+    new ButtonBuilder().setCustomId('panelstreak_mygroup').setLabel('Grup Saya').setEmoji('👥').setStyle(ButtonStyle.Secondary)
+  );
+}
+
+module.exports = { buildPanelCard, buildMusicSubRow, buildVoiceStatsSelectRow, buildStreakSubRow, PANEL_COLOR };
