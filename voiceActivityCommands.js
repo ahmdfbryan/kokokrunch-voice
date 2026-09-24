@@ -3,23 +3,7 @@ const voiceActivity = require('./voiceActivity');
 
 const LEADERBOARD_COLOR = 0xf1c40f;
 const RANK_EMOJI = ['🥇', '🥈', '🥉'];
-
-/**
- * Format durasi panjang (bisa berhari-hari) jadi teks yang enak dibaca,
- * misal "2 hari 5 jam 12 menit" atau "45 menit".
- */
-function formatDurationLong(totalSeconds) {
-  const totalMinutes = Math.floor(totalSeconds / 60);
-  const days = Math.floor(totalMinutes / (60 * 24));
-  const hours = Math.floor((totalMinutes % (60 * 24)) / 60);
-  const minutes = totalMinutes % 60;
-
-  const parts = [];
-  if (days > 0) parts.push(`${days} hari`);
-  if (hours > 0) parts.push(`${hours} jam`);
-  if (minutes > 0 || parts.length === 0) parts.push(`${minutes} menit`);
-  return parts.join(' ');
-}
+const { formatDurationLong } = voiceActivity;
 
 const commands = [
   {
