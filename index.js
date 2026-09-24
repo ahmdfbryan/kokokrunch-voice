@@ -1025,12 +1025,16 @@ client.on('interactionCreate', async (interaction) => {
 
         // Gambar ID Card digambar on-the-fly (canvas + foto profil Discord)
         // -- bisa makan waktu >3 detik kalau fetch avatarnya lelet, jadi
-        // defer dulu biar interaksinya nggak keburu expired.
+        // defer dulu (ephemeral, cuma buat nahan interaksinya) sebelum
+        // hasilnya dikirim PUBLIK ke channel (mirip Voice Leaderboard --
+        // "Lihat ID Saya" ditujukan buat dipamerin, bukan cuma diliat
+        // sendiri).
         await interaction.deferReply({ flags: MessageFlags.Ephemeral });
         const buffer = await renderIdCardImage(card, interaction.user, interaction.guild?.name);
         const attachment = new AttachmentBuilder(buffer, { name: 'idcard.png' });
         const embed = idCardManager.buildIdCardEmbed(card, 'idcard.png');
-        await interaction.editReply({ embeds: [embed], files: [attachment] });
+        await interaction.channel.send({ content: `🪪 ID Card dari <@${interaction.user.id}>`, embeds: [embed], files: [attachment] });
+        await interaction.editReply({ content: '✅ ID Card kamu ditampilkan ke channel.' });
       } catch (err) {
         log(`[PANEL] Error tombol panelid_view: ${err?.stack || err}`);
         await interaction.editReply({ content: 'Gagal generate gambar ID Card, coba lagi.' }).catch(() => {});
