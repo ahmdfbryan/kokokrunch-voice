@@ -5,7 +5,7 @@ const DATA_DIR = path.join(__dirname, 'data');
 const DATA_PATH = path.join(DATA_DIR, 'streakGroups.json');
 
 // { [groupId]: {
-//   id, guildId, ownerId, memberIds: [...],
+//   id, guildId, ownerId, name, memberIds: [...],
 //   createdAt, currentStreak, longestStreak,
 //   checkins: { [dayKey]: [userId, ...] },  -- window yang lagi berjalan/belum dievaluasi
 //   lastFinalizedDayKey: string,             -- dayKey window yang masih "terbuka" (belum dievaluasi)
@@ -54,11 +54,12 @@ function getGroupForUser(guildId, userId) {
   return Object.values(data).find((g) => g.guildId === guildId && g.memberIds.includes(userId)) || null;
 }
 
-function createGroup(guildId, ownerId, dayKeyNow) {
+function createGroup(guildId, ownerId, dayKeyNow, name) {
   const group = {
     id: generateId(),
     guildId,
     ownerId,
+    name: name || null,
     memberIds: [ownerId],
     createdAt: Date.now(),
     currentStreak: 0,
@@ -69,6 +70,14 @@ function createGroup(guildId, ownerId, dayKeyNow) {
   data[group.id] = group;
   saveSync();
   return group;
+}
+
+function renameGroup(groupId, newName) {
+  const g = data[groupId];
+  if (!g) return { ok: false, reason: 'not_found' };
+  g.name = newName;
+  saveSync();
+  return { ok: true, group: g };
 }
 
 function addMember(groupId, userId) {
@@ -103,6 +112,7 @@ module.exports = {
   getGroupByOwner,
   getGroupForUser,
   createGroup,
+  renameGroup,
   addMember,
   recordCheckin,
   saveGroup,
