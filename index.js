@@ -988,17 +988,17 @@ client.on('interactionCreate', async (interaction) => {
           return;
         }
 
-        const group = streakStore.createGroup(interaction.guildId, interaction.user.id, streakManager.getStreakDayKey());
-        await interaction.reply({
-          embeds: [
-            new EmbedBuilder()
-              .setColor(0x57f287)
-              .setDescription(
-                `✅ Grup berhasil dibuat! (ID \`${group.id}\`)\n\nUndang minimal **${streakManager.MIN_MEMBERS_TO_START - 1} orang lagi** (total ${streakManager.MIN_MEMBERS_TO_START}) lewat tombol **Grup Saya** buat mulai nyalain streak.`
-              ),
-          ],
-          flags: MessageFlags.Ephemeral,
-        });
+        // Sebelum bikin grup, minta owner kasih nama dulu lewat modal.
+        const modal = new ModalBuilder().setCustomId('panel_streak_create_modal').setTitle('Buat Grup Streak');
+        const nameInput = new TextInputBuilder()
+          .setCustomId('panel_streak_name')
+          .setLabel('Nama Grup')
+          .setStyle(TextInputStyle.Short)
+          .setRequired(true)
+          .setMaxLength(streakManager.MAX_NAME_LENGTH)
+          .setPlaceholder('misal: Squad Gacor');
+        modal.addComponents(new ActionRowBuilder().addComponents(nameInput));
+        await interaction.showModal(modal);
       } catch (err) {
         log(`[PANEL] Error tombol panelstreak_create: ${err?.stack || err}`);
       }
@@ -1023,17 +1023,59 @@ client.on('interactionCreate', async (interaction) => {
         const embed = streakManager.buildGroupStatusEmbed(group, interaction.user.id);
         const isOwner = group.ownerId === interaction.user.id;
         const components = [];
-        if (isOwner && group.memberIds.length < streakManager.MAX_MEMBERS) {
-          const select = new UserSelectMenuBuilder()
-            .setCustomId('panelstreak_invite_select')
-            .setPlaceholder('➕ Invite member baru ke grup ini...')
-            .setMinValues(1)
-            .setMaxValues(1);
-          components.push(new ActionRowBuilder().addComponents(select));
+        if (isOwner) {
+          const buttonRow = new ActionRowBuilder().addComponents(
+            new ButtonBuilder().setCustomId('panelstreak_rename').setLabel('Ganti Nama').setEmoji('✏️').setStyle(ButtonStyle.Secondary)
+          );
+          components.push(buttonRow);
+          if (group.memberIds.length < streakManager.MAX_MEMBERS) {
+            const select = new UserSelectMenuBuilder()
+              .setCustomId('panelstreak_invite_select')
+              .setPlaceholder('➕ Invite member baru ke grup ini...')
+              .setMinValues(1)
+              .setMaxValues(1);
+            components.push(new ActionRowBuilder().addComponents(select));
+          }
         }
         await interaction.reply({ embeds: [embed], components, flags: MessageFlags.Ephemeral });
       } catch (err) {
         log(`[PANEL] Error tombol panelstreak_mygroup: ${err?.stack || err}`);
+      }
+      return;
+    }
+
+    if (interaction.customId === 'panelstreak_rename') {
+      try {
+        const group = streakStore.getGroupByOwner(interaction.guildId, interaction.user.id);
+        if (!group) {
+          await interaction.reply({ content: 'Kamu bukan owner grup manapun.', flags: MessageFlags.Ephemeral });
+          return;
+        }
+
+        const modal = new ModalBuilder().setCustomId('panel_streak_rename_modal').setTitle('Ganti Nama Grup');
+        const nameInput = new TextInputBuilder()
+          .setCustomId('panel_streak_name')
+          .setLabel('Nama Grup Baru')
+          .setStyle(TextInputStyle.Short)
+          .setRequired(true)
+          .setMaxLength(streakManager.MAX_NAME_LENGTH)
+          .setPlaceholder('misal: Squad Gacor');
+        if (group.name && typeof nameInput.setValue === 'function') nameInput.setValue(group.name);
+        modal.addComponents(new ActionRowBuilder().addComponents(nameInput));
+        await interaction.showModal(modal);
+      } catch (err) {
+        log(`[PANEL] Error tombol panelstreak_rename: ${err?.stack || err}`);
+      }
+      return;
+    }
+
+    if (interaction.customId === 'panelstreak_leaderboard') {
+      try {
+        const embed = streakManager.buildStreakLeaderboardEmbed(interaction.guildId);
+        await interaction.channel.send({ embeds: [embed] });
+        await interaction.reply({ content: '✅ Leaderboard streak dikirim ke channel.', flags: MessageFlags.Ephemeral });
+      } catch (err) {
+        log(`[PANEL] Error tombol panelstreak_leaderboard: ${err?.stack || err}`);
       }
       return;
     }
@@ -1184,6 +1226,77 @@ client.on('interactionCreate', async (interaction) => {
         await aiCommands.performAsk(interaction, question);
       } catch (err) {
         log(`[PANEL] Error tanya AI dari panel: ${err?.stack || err}`);
+      }
+      return;
+    }
+
+    if (interaction.customId === 'panel_streak_create_modal') {
+      try {
+        const raw = interaction.fields.getTextInputValue('panel_streak_name');
+        const check = streakManager.sanitizeGroupName(raw);
+        if (!check.ok) {
+          const msg =
+            check.reason === 'too_long'
+              ? `Nama grup maksimal ${streakManager.MAX_NAME_LENGTH} karakter.`
+              : 'Nama grup nggak boleh kosong.';
+          await interaction.reply({ content: msg, flags: MessageFlags.Ephemeral });
+          return;
+        }
+
+        // Double-check di sini juga (race kecil kalau modal dibuka lama) --
+        // pengecekan utama udah dilakuin sebelum modal ditampilkan.
+        const existing = streakStore.getGroupByOwner(interaction.guildId, interaction.user.id);
+        if (existing) {
+          await interaction.reply({
+            content: `Kamu udah punya grup aktif (ID \`${existing.id}\`). Cuma boleh 1 grup per owner.`,
+            flags: MessageFlags.Ephemeral,
+          });
+          return;
+        }
+
+        const group = streakStore.createGroup(interaction.guildId, interaction.user.id, streakManager.getStreakDayKey(), check.name);
+        await interaction.reply({
+          embeds: [
+            new EmbedBuilder()
+              .setColor(0x57f287)
+              .setDescription(
+                `✅ Grup **${check.name}** berhasil dibuat! (ID \`${group.id}\`)\n\nUndang minimal **${streakManager.MIN_MEMBERS_TO_START - 1} orang lagi** (total ${streakManager.MIN_MEMBERS_TO_START}) lewat tombol **Grup Saya** buat mulai nyalain streak.`
+              ),
+          ],
+          flags: MessageFlags.Ephemeral,
+        });
+      } catch (err) {
+        log(`[PANEL] Error panel_streak_create_modal: ${err?.stack || err}`);
+      }
+      return;
+    }
+
+    if (interaction.customId === 'panel_streak_rename_modal') {
+      try {
+        const raw = interaction.fields.getTextInputValue('panel_streak_name');
+        const check = streakManager.sanitizeGroupName(raw);
+        if (!check.ok) {
+          const msg =
+            check.reason === 'too_long'
+              ? `Nama grup maksimal ${streakManager.MAX_NAME_LENGTH} karakter.`
+              : 'Nama grup nggak boleh kosong.';
+          await interaction.reply({ content: msg, flags: MessageFlags.Ephemeral });
+          return;
+        }
+
+        const group = streakStore.getGroupByOwner(interaction.guildId, interaction.user.id);
+        if (!group) {
+          await interaction.reply({ content: 'Kamu bukan owner grup manapun.', flags: MessageFlags.Ephemeral });
+          return;
+        }
+
+        streakStore.renameGroup(group.id, check.name);
+        await interaction.reply({
+          embeds: [new EmbedBuilder().setColor(0x57f287).setDescription(`✅ Nama grup diganti jadi **${check.name}**.`)],
+          flags: MessageFlags.Ephemeral,
+        });
+      } catch (err) {
+        log(`[PANEL] Error panel_streak_rename_modal: ${err?.stack || err}`);
       }
       return;
     }
