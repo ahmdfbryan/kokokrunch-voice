@@ -45,6 +45,7 @@ const panelStore = require('./panelStore');
 const { buildPanelCard, buildMusicSubRow, buildVoiceStatsSelectRow, PANEL_COLOR } = require('./panelCard');
 const { COLOR, textEmbed } = require('./musicFormat');
 const { buildCommandsListEmbed } = require('./commandsList');
+const { buildLeaderboardEmbed } = require('./voiceActivityCommands');
 
 const EMBED_COLOR = 0x5865f2;
 // Catatan: URL ini dikoreksi dari input asli yang ada teks "hyphenhyphen"
@@ -443,19 +444,8 @@ function buildVoiceStatsEmbed(user) {
   return embed;
 }
 
-function buildVoiceLeaderboardEmbed() {
-  const top = voiceActivity.getLeaderboard(10);
-  if (top.length === 0) {
-    return new EmbedBuilder().setColor(0x99aab5).setDescription('📭 Belum ada data aktivitas voice sama sekali.');
-  }
-  const RANK_EMOJI = ['🥇', '🥈', '🥉'];
-  const lines = top.map((entry, i) => {
-    const tier = voiceActivity.getTierInfo(entry.totalSeconds);
-    const rank = RANK_EMOJI[i] || `${i + 1}.`;
-    return `${rank} **${entry.username}** — ${voiceActivity.formatDurationLong(entry.totalSeconds)} ${tier.emoji}`;
-  });
-  return new EmbedBuilder().setColor(0xf1c40f).setTitle('🏆 Voice Leaderboard').setDescription(lines.join('\n'));
-}
+// buildLeaderboardEmbed diimpor dari voiceActivityCommands.js (satu sumber
+// yang sama dipakai /voiceleaderboard DAN dropdown leaderboard di panel).
 
 async function handlePanelQueue(interaction) {
   const queue = musicManager.getQueue(interaction.guildId);
@@ -1110,7 +1100,7 @@ client.on('interactionCreate', async (interaction) => {
     if (interaction.customId === 'panel_voicestats_select') {
       try {
         const choice = interaction.values[0];
-        const embed = choice === 'leaderboard' ? buildVoiceLeaderboardEmbed() : buildVoiceStatsEmbed(interaction.user);
+        const embed = choice === 'leaderboard' ? buildLeaderboardEmbed() : buildVoiceStatsEmbed(interaction.user);
         await interaction.channel.send({ embeds: [embed] });
         await interaction.update({
           embeds: [new EmbedBuilder().setColor(0x57f287).setDescription('✅ Ditampilkan ke channel.')],
