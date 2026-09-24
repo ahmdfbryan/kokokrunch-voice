@@ -41,8 +41,10 @@ function buildPanelCard(botAvatarURL) {
     .setTimestamp();
 
   // Discord batasin maks 5 tombol per row, jadi tombol utama dipecah jadi
-  // 2 baris -- "Tanya AI" sengaja ditaro di awal row2 biar tetep persis
-  // sebelum "Info/Help".
+  // 2 baris yang seimbang (4 + 3) biar rapi -- urutannya tetap sesuai
+  // permintaan: Musik, Giveaway, Streak, Voice Stats, lalu Tanya AI persis
+  // sebelum Info/Help, dan Credit nutup di baris yang sama biar nggak
+  // nyisain baris sendirian isi 1 tombol doang.
   const row1 = new ActionRowBuilder().addComponents(
     new ButtonBuilder().setCustomId('panel_music').setLabel('Musik').setEmoji('🎵').setStyle(ButtonStyle.Primary),
     new ButtonBuilder().setCustomId('panel_giveaway').setLabel('Giveaway').setEmoji('🎁').setStyle(ButtonStyle.Success),
@@ -51,15 +53,13 @@ function buildPanelCard(botAvatarURL) {
   );
   const row2 = new ActionRowBuilder().addComponents(
     new ButtonBuilder().setCustomId('panel_ask').setLabel('Tanya AI').setEmoji('🤖').setStyle(ButtonStyle.Primary),
-    new ButtonBuilder().setCustomId('panel_help').setLabel('Info/Help').setEmoji('ℹ️').setStyle(ButtonStyle.Secondary)
-  );
-  const row3 = new ActionRowBuilder().addComponents(
+    new ButtonBuilder().setCustomId('panel_help').setLabel('Info/Help').setEmoji('ℹ️').setStyle(ButtonStyle.Secondary),
     // Tombol Link (bukan customId) -- diklik langsung buka profil Discord
     // pembuat bot, nggak lewat interactionCreate sama sekali.
     new ButtonBuilder().setLabel('Credit').setEmoji('👤').setStyle(ButtonStyle.Link).setURL('https://discord.com/users/1141222257604182020')
   );
 
-  return { embed, components: [row1, row2, row3] };
+  return { embed, components: [row1, row2] };
 }
 
 /**
