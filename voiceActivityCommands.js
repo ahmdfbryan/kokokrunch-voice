@@ -2,8 +2,39 @@ const { SlashCommandBuilder, EmbedBuilder, MessageFlags } = require('discord.js'
 const voiceActivity = require('./voiceActivity');
 
 const LEADERBOARD_COLOR = 0xf1c40f;
-const RANK_EMOJI = ['🥇', '🥈', '🥉'];
+// 3 besar pakai medali, sisanya pakai angka bulat biru -- mirip gaya
+// leaderboard channel voice yang dicontohin user (rank -> nama -> title ->
+// durasi, masing-masing baris sendiri per entry).
+const RANK_ICONS = ['🥇', '🥈', '🥉', '4️⃣', '5️⃣', '6️⃣', '7️⃣', '8️⃣', '9️⃣', '🔟'];
 const { formatDurationLong } = voiceActivity;
+
+/**
+ * Bikin embed "Voice Leaderboard" -- dipakai baik dari /voiceleaderboard
+ * maupun dari dropdown "Leaderboard" di panel bot, biar tampilannya selalu
+ * konsisten satu sumber. Tiap entry ditulis 3 baris terpisah (rank+nama,
+ * title/tier, durasi) dipisah baris kosong antar entry, biar render-nya
+ * SAMA PERSIS baik di HP maupun laptop (murni teks description, bukan
+ * field inline yang suka berantakan di HP).
+ */
+function buildLeaderboardEmbed() {
+  const top = voiceActivity.getLeaderboard(10);
+
+  if (top.length === 0) {
+    return new EmbedBuilder().setColor(0x99aab5).setDescription('📭 Belum ada data aktivitas voice sama sekali.');
+  }
+
+  const blocks = top.map((entry, i) => {
+    const tier = voiceActivity.getTierInfo(entry.totalSeconds);
+    const icon = RANK_ICONS[i] || `#${i + 1}`;
+    return [
+      `${icon}  ➜  **${entry.username}**`,
+      `👑 Title: ${tier.emoji} ${tier.title}`,
+      `⏱️ Durasi: ${formatDurationLong(entry.totalSeconds)}`,
+    ].join('\n');
+  });
+
+  return new EmbedBuilder().setColor(LEADERBOARD_COLOR).setTitle('🏆 Voice Leaderboard').setDescription(blocks.join('\n\n'));
+}
 
 const commands = [
   {
@@ -54,27 +85,12 @@ const commands = [
   {
     data: new SlashCommandBuilder().setName('voiceleaderboard').setDescription('Lihat leaderboard voice activity server ini'),
     async execute(interaction) {
-      const top = voiceActivity.getLeaderboard(10);
-
-      if (top.length === 0) {
-        const embed = new EmbedBuilder().setColor(0x99aab5).setDescription('📭 Belum ada data aktivitas voice sama sekali.');
-        await interaction.reply({ embeds: [embed], flags: MessageFlags.Ephemeral });
-        return;
-      }
-
-      const lines = top.map((entry, i) => {
-        const tier = voiceActivity.getTierInfo(entry.totalSeconds);
-        const rank = RANK_EMOJI[i] || `${i + 1}.`;
-        return `${rank} **${entry.username}** — ${formatDurationLong(entry.totalSeconds)} ${tier.emoji}`;
-      });
-
-      const embed = new EmbedBuilder()
-        .setColor(LEADERBOARD_COLOR)
-        .setTitle('🏆 Voice Leaderboard')
-        .setDescription(lines.join('\n'));
-      await interaction.reply({ embeds: [embed] });
+      const isEmpty = voiceActivity.getLeaderboard(10).length === 0;
+      const embed = buildLeaderboardEmbed();
+      await interaction.reply({ embeds: [embed], flags: isEmpty ? MessageFlags.Ephemeral : undefined });
     },
   },
 ];
 
 module.exports = commands;
+module.exports.buildLeaderboardEmbed = buildLeaderboardEmbed;
