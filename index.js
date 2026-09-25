@@ -32,6 +32,7 @@ const {
 const config = require('./config');
 const musicManager = require('./musicManager');
 const musicPlaylistStore = require('./musicPlaylistStore');
+const lyricsManager = require('./lyricsManager');
 const { buildNowPlayingCard, cycleLoopMode, withNowPlayingLock } = require('./nowPlayingCard');
 const voiceActivity = require('./voiceActivity');
 const stickyMessage = require('./stickyMessage');
@@ -847,6 +848,24 @@ client.on('interactionCreate', async (interaction) => {
           }
           musicManager.stop(guildId);
           await interaction.deferUpdate();
+        } else if (interaction.customId === 'music_lyrics') {
+          const queueForLyrics = musicManager.getQueue(guildId);
+          if (!queueForLyrics.current) {
+            await interaction.reply({ content: 'Nggak ada lagu yang lagi diputar.', flags: MessageFlags.Ephemeral });
+            return;
+          }
+          // Balesannya ephemeral (cuma yang klik yang liat) & TERPISAH dari
+          // card Now Playing -- beda dari tombol lain di sini, "Lirik"
+          // nggak ngubah state lagu jadi card-nya nggak perlu di-update.
+          await interaction.deferReply({ flags: MessageFlags.Ephemeral });
+          try {
+            const result = await lyricsManager.getLyrics(queueForLyrics.current.title);
+            const embed = lyricsManager.buildLyricsEmbed(queueForLyrics.current, result);
+            await interaction.editReply({ embeds: [embed] });
+          } catch (lyricsErr) {
+            log(`[MUSIC BUTTON] Error ambil lirik: ${lyricsErr?.stack || lyricsErr}`);
+            await interaction.editReply({ content: 'Gagal ambil lirik, coba lagi.' }).catch(() => {});
+          }
         } else {
           await interaction.deferUpdate();
         }
