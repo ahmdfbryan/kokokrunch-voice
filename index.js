@@ -33,7 +33,7 @@ const config = require('./config');
 const musicManager = require('./musicManager');
 const musicPlaylistStore = require('./musicPlaylistStore');
 const lyricsManager = require('./lyricsManager');
-const { buildNowPlayingCard, cycleLoopMode, withNowPlayingLock } = require('./nowPlayingCard');
+const { buildNowPlayingCard, withNowPlayingLock } = require('./nowPlayingCard');
 const voiceActivity = require('./voiceActivity');
 const welcomeManager = require('./welcomeManager');
 const botBranding = require('./botBranding');
@@ -844,12 +844,11 @@ client.on('interactionCreate', async (interaction) => {
           musicManager.setAutoplay(guildId, !musicManager.isAutoplayEnabled(guildId));
           const { embed, components } = buildNowPlayingCard(guildId);
           await interaction.update({ embeds: [embed], components });
-        } else if (interaction.customId === 'music_loop') {
-          const nextMode = cycleLoopMode(musicManager.getLoopMode(guildId));
-          musicManager.setLoopMode(guildId, nextMode);
-          // Sinkron juga (nggak lewat transisi Idle), aman di-render ulang sekarang juga.
-          const { embed, components } = buildNowPlayingCard(guildId);
-          await interaction.update({ embeds: [embed], components });
+        } else if (interaction.customId === 'music_queue') {
+          // Tombol info doang (nggak ngubah state lagu) -- balesnya ephemeral
+          // biasa (bukan interaction.update), card Now Playing-nya sendiri
+          // nggak berubah.
+          await handlePanelQueue(interaction);
         } else if (interaction.customId === 'music_skip') {
           const queueForSkip = musicManager.getQueue(guildId);
           if (!permissions.canControlPlayback(interaction.member, queueForSkip.current)) {
