@@ -29,13 +29,16 @@ function formatUptime(ms) {
 }
 
 /**
- * Tombol "Home" -- dipakai di HAMPIR SEMUA layar panel (kecuali beberapa
- * balasan singkat/leaf) biar user selalu bisa balik ke Panel Utama dari
- * mana aja, dalam 1 embed/pesan yang sama (lihat index.js: respondPanelScreen).
- * Di layar Home sendiri tombolnya di-disable karena emang lagi di situ.
+ * Tombol "Home" -- dipakai di HAMPIR SEMUA layar panel biar user selalu
+ * bisa balik ke Panel Utama dari mana aja, dalam 1 embed/pesan yang sama
+ * (lihat index.js: respondPanelScreen, yang selalu interaction.update()
+ * pesan panel yang sama, nggak pernah bikin balasan baru). Tetap bisa
+ * diklik walau lagi di layar Home sendiri -- klik di situ cuma nge-refresh
+ * Home (nggak pindah kemana-mana), jadi kerasa "gak ada aksi apa-apa".
+ * Warna hijau (Success) jadi ciri khas tombol Home di semua layar.
  */
-function buildHomeButton({ disabled = false } = {}) {
-  return new ButtonBuilder().setCustomId('panel_home').setLabel('Home').setEmoji('🏠').setStyle(ButtonStyle.Primary).setDisabled(disabled);
+function buildHomeButton() {
+  return new ButtonBuilder().setCustomId('panel_home').setLabel('Home').setEmoji('🏠').setStyle(ButtonStyle.Success);
 }
 
 /** Row isi 1 tombol Home doang -- dipakai di layar-layar yang cuma butuh itu (Bantuan, Voice Stats, dll). */
@@ -51,9 +54,10 @@ function buildHomeOnlyRow() {
  * Solusinya: semua konten taro di description biasa (cuma teks yang wrap),
  * yang render-nya PERSIS SAMA di HP maupun laptop.
  *
- * Bagian Stats (Jumlah Command, Uptime, Ping, Status, Made by) dirender
- * pakai blockquote (`> `) biar keliatan kayak "kartu info" terpisah dari
- * deskripsi bot di atasnya.
+ * Bagian Stats (Commands, Uptime, Ping, Status, Made by) dirender pakai
+ * blockquote (`> `) biar keliatan kayak "kartu info" terpisah dari
+ * deskripsi bot di atasnya. Judul section-nya sendiri sengaja polos tanpa
+ * icon -- icon-nya dipindah ke depan tiap baris stat-nya masing-masing.
  *
  * `client` dipakai buat ambil avatar bot, uptime (client.uptime) & ping
  * (client.ws.ping). `commandCount` jumlah total command yang kedaftar.
@@ -70,12 +74,12 @@ function buildHomeEmbed(client, commandCount) {
       [
         '**Akses semua fitur bot Satpam Voice cukup dari panel ini.**',
         '',
-        '**📊 Stats**',
-        `> **Jumlah Command:** ${commandCount ?? 0}`,
-        `> **Uptime:** ${uptimeText}`,
-        `> **Ping:** ${pingMs}ms`,
-        '> **Status Bot:** 🟢 Online',
-        '> **Made by** `Satpam Voice`',
+        '**Stats**',
+        `> 📜 \`${commandCount ?? 0}\` Commands`,
+        `> ⏱️ \`${uptimeText}\` Uptime`,
+        `> 📶 \`${pingMs}ms\` Ping`,
+        '> 🟢 `Online` Status',
+        '> Made by `Satpam Voice`',
       ].join('\n')
     )
     .setThumbnail(botAvatarURL || null)
@@ -90,9 +94,9 @@ function buildHomeEmbed(client, commandCount) {
  */
 function buildHomeButtons() {
   const row = new ActionRowBuilder().addComponents(
-    buildHomeButton({ disabled: true }),
-    new ButtonBuilder().setCustomId('panel_featured').setLabel('Featured').setEmoji('✨').setStyle(ButtonStyle.Success),
-    new ButtonBuilder().setCustomId('panel_music').setLabel('Musik').setEmoji('🎵').setStyle(ButtonStyle.Primary),
+    buildHomeButton(),
+    new ButtonBuilder().setCustomId('panel_featured').setLabel('Featured').setEmoji('✨').setStyle(ButtonStyle.Secondary),
+    new ButtonBuilder().setCustomId('panel_music').setLabel('Musik').setEmoji('🎵').setStyle(ButtonStyle.Secondary),
     new ButtonBuilder().setCustomId('panel_help').setLabel('Bantuan').setEmoji('ℹ️').setStyle(ButtonStyle.Secondary),
     // Tombol Link (bukan customId) -- diklik langsung buka profil Discord
     // pembuat bot, nggak lewat interactionCreate sama sekali.
@@ -122,18 +126,22 @@ function buildFeaturedEmbed() {
 }
 
 function buildFeaturedButtons() {
+  // Semua tombol fitur di sini SENGAJA dibikin netral (Secondary/abu-abu,
+  // nggak ada warna beda-beda per fitur) -- biar Home (hijau) jadi satu-
+  // satunya tombol yang "menonjol" warnanya di layar ini.
   const row1 = new ActionRowBuilder().addComponents(
-    new ButtonBuilder().setCustomId('panel_giveaway').setLabel('Giveaway').setEmoji('🎁').setStyle(ButtonStyle.Success),
-    new ButtonBuilder().setCustomId('panel_streak').setLabel('Streak').setEmoji('🔥').setStyle(ButtonStyle.Danger),
-    new ButtonBuilder().setCustomId('panel_ask').setLabel('Tanya AI').setEmoji('🤖').setStyle(ButtonStyle.Primary),
-    new ButtonBuilder().setCustomId('panel_idcard').setLabel('ID Card').setEmoji('🪪').setStyle(ButtonStyle.Primary),
+    new ButtonBuilder().setCustomId('panel_giveaway').setLabel('Giveaway').setEmoji('🎁').setStyle(ButtonStyle.Secondary),
+    new ButtonBuilder().setCustomId('panel_streak').setLabel('Streak').setEmoji('🔥').setStyle(ButtonStyle.Secondary),
+    new ButtonBuilder().setCustomId('panel_ask').setLabel('Tanya AI').setEmoji('🤖').setStyle(ButtonStyle.Secondary),
+    new ButtonBuilder().setCustomId('panel_idcard').setLabel('ID Card').setEmoji('🪪').setStyle(ButtonStyle.Secondary),
     new ButtonBuilder().setCustomId('panel_tiktok').setLabel('TikTok').setEmoji('📱').setStyle(ButtonStyle.Secondary)
   );
   const row2 = new ActionRowBuilder().addComponents(
-    new ButtonBuilder().setCustomId('panel_voicestats').setLabel('Voice Stats').setEmoji('📊').setStyle(ButtonStyle.Secondary),
-    buildHomeButton()
+    new ButtonBuilder().setCustomId('panel_voicestats').setLabel('Voice Stats').setEmoji('📊').setStyle(ButtonStyle.Secondary)
   );
-  return [row1, row2];
+  // Home sendirian di baris ke-3 (bukan numpang di row2 bareng Voice Stats lagi).
+  const row3 = new ActionRowBuilder().addComponents(buildHomeButton());
+  return [row1, row2, row3];
 }
 
 /**
@@ -141,10 +149,12 @@ function buildFeaturedButtons() {
  * tombol "Musik" di panel utama diklik.
  */
 function buildMusicSubRow() {
+  // Sama kayak layar Featured -- tombol aksinya dibikin netral (Secondary)
+  // semua, Home (hijau) yang jadi penanda warna satu-satunya.
   return new ActionRowBuilder().addComponents(
-    new ButtonBuilder().setCustomId('panelmusic_play').setLabel('Play').setEmoji('▶️').setStyle(ButtonStyle.Success),
-    new ButtonBuilder().setCustomId('panelmusic_skip').setLabel('Skip').setEmoji('⏭️').setStyle(ButtonStyle.Primary),
-    new ButtonBuilder().setCustomId('panelmusic_stop').setLabel('Stop').setEmoji('⏹️').setStyle(ButtonStyle.Danger),
+    new ButtonBuilder().setCustomId('panelmusic_play').setLabel('Play').setEmoji('▶️').setStyle(ButtonStyle.Secondary),
+    new ButtonBuilder().setCustomId('panelmusic_skip').setLabel('Skip').setEmoji('⏭️').setStyle(ButtonStyle.Secondary),
+    new ButtonBuilder().setCustomId('panelmusic_stop').setLabel('Stop').setEmoji('⏹️').setStyle(ButtonStyle.Secondary),
     new ButtonBuilder().setCustomId('panelmusic_queue').setLabel('Queue').setEmoji('📜').setStyle(ButtonStyle.Secondary),
     buildHomeButton()
   );
