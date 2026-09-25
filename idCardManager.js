@@ -4,6 +4,7 @@
 // digenerate otomatis sama bot.
 
 const { EmbedBuilder } = require('discord.js');
+const botBranding = require('./botBranding');
 
 const ID_CARD_COLOR = 0x3b82f6; // biru, senada aksen di gambar kartunya
 const FIELD_MAX_LENGTH = 100;
@@ -46,14 +47,13 @@ function formatIdNo(idNo) {
  * AttachmentBuilder pas dikirim (lihat index.js).
  */
 function buildIdCardEmbed(card, attachmentFileName) {
-  return new EmbedBuilder()
+  const embed = new EmbedBuilder()
     .setColor(ID_CARD_COLOR)
     .setAuthor({ name: `🪪  ID Card — ${formatIdNo(card.idNo)}` })
-    .setImage(`attachment://${attachmentFileName}`)
-    .setFooter({ text: 'KokoKrunch Studios' })
-    // setTimestamp() bikin Discord otomatis nampilin "• Today at HH:MM AM/PM"
-    // (atau tanggalnya kalau bukan hari ini) di sebelah teks footer.
-    .setTimestamp();
+    .setImage(`attachment://${attachmentFileName}`);
+  // applyBrandFooter nempelin logo bot + "Satpam Voice" + timestamp native
+  // Discord (otomatis jadi "Satpam Voice • Today at HH:MM AM/PM").
+  return botBranding.applyBrandFooter(embed);
 }
 
 module.exports = {
