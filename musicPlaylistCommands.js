@@ -26,6 +26,30 @@ function normalizeName(raw) {
   return raw.trim().slice(0, MAX_NAME_LEN);
 }
 
+// Daftar deskripsi subcommand /playlist -- ditulis manual (bukan introspeksi
+// dari SlashCommandBuilder) biar simpel & konsisten dipakai di mana aja,
+// termasuk dari tombol "Playlist" di panel bot (lihat buildPlaylistCommandsEmbed).
+const PLAYLIST_SUBCOMMAND_DOCS = [
+  { name: 'save', desc: 'Simpan antrian musik yang lagi jalan jadi playlist' },
+  { name: 'add', desc: 'Tambahin lagu ke playlist langsung dari link (nggak perlu lagi diputar dulu)' },
+  { name: 'play', desc: 'Putar playlist yang udah disimpan' },
+  { name: 'list', desc: 'Lihat semua playlist kamu' },
+  { name: 'delete', desc: 'Hapus playlist' },
+];
+
+/**
+ * Embed daftar command /playlist -- dipakai dari tombol "Playlist" di panel
+ * bot (Kontrol Musik), biar orang nggak perlu ngapalin subcommand-nya.
+ */
+function buildPlaylistCommandsEmbed() {
+  const lines = PLAYLIST_SUBCOMMAND_DOCS.map((c) => `**/playlist ${c.name}** — ${c.desc}`);
+  return new EmbedBuilder()
+    .setColor(COLOR)
+    .setAuthor({ name: '📁  Command Playlist' })
+    .setDescription(lines.join('\n'))
+    .setFooter({ text: 'Semua command ini juga bisa dipakai lewat prefix, misal s!playlist play <nama>' });
+}
+
 const playlistCommand = {
   data: new SlashCommandBuilder()
     .setName('playlist')
@@ -257,3 +281,4 @@ const playlistCommand = {
 };
 
 module.exports = [playlistCommand];
+module.exports.buildPlaylistCommandsEmbed = buildPlaylistCommandsEmbed;
