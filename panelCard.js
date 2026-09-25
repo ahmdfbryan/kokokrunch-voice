@@ -35,6 +35,7 @@ function buildPanelCard(botAvatarURL) {
         '🤖 **Tanya AI** — Tanya apa aja ke AI bot',
         'ℹ️ **Info / Help** — Daftar semua command',
         '🪪 **ID Card** — Buat & lihat kartu identitas Satpam Voice kamu',
+        '📱 **TikTok** — Request lagu langsung dari live TikTok',
       ].join('\n')
     )
     .setThumbnail(botAvatarURL || null)
@@ -59,7 +60,9 @@ function buildPanelCard(botAvatarURL) {
   // ID Card biru (nyocokin sama warna aksen di gambar ID Card-nya sendiri).
   const row2 = new ActionRowBuilder().addComponents(
     new ButtonBuilder().setCustomId('panel_ask').setLabel('Tanya AI').setEmoji('🤖').setStyle(ButtonStyle.Primary),
-    new ButtonBuilder().setCustomId('panel_idcard').setLabel('ID Card').setEmoji('🪪').setStyle(ButtonStyle.Primary)
+    new ButtonBuilder().setCustomId('panel_idcard').setLabel('ID Card').setEmoji('🪪').setStyle(ButtonStyle.Primary),
+    // Tombol info/status doang (bukan ngubah state apa-apa), jadi abu-abu netral.
+    new ButtonBuilder().setCustomId('panel_tiktok').setLabel('TikTok').setEmoji('📱').setStyle(ButtonStyle.Secondary)
   );
   const row3 = new ActionRowBuilder().addComponents(
     new ButtonBuilder().setCustomId('panel_voicestats').setLabel('Voice Stats').setEmoji('📊').setStyle(ButtonStyle.Secondary),
