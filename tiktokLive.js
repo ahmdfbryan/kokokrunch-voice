@@ -2,10 +2,13 @@ const { EmbedBuilder } = require('discord.js');
 const botBranding = require('./botBranding');
 const tiktokLiveStore = require('./tiktokLiveStore');
 
-// Integrasi TikTok LIVE: nangkep comment "!request <judul lagu>" dari live
-// TikTok, terus otomatis nge-play lagu itu di voice channel Discord (persis
-// kayak /play). CUMA fitur request ini yang diaktifin -- nggak nyentuh
-// gift/follow/like/comment lain sama sekali.
+// Integrasi TikTok LIVE: nangkep comment dari live TikTok buat 2 command:
+// - "!request <judul lagu>" -- otomatis nge-play lagu itu di voice channel
+//   Discord (persis kayak /play).
+// - "!autoplay on" / "!autoplay off" -- nyalain/matiin fitur Autoplay musik
+//   (persis kayak tombol AutoPlay di card Now Playing).
+// CUMA 2 command ini yang diaktifin -- nggak nyentuh gift/follow/like/comment
+// lain sama sekali.
 //
 // Username yang dipantau BISA DIGANTI SIAPA AJA lewat tombol "TikTok" di
 // panel utama (bukan cuma lewat .env) -- jadi kalau pemilik bot lagi nggak
@@ -22,6 +25,7 @@ const tiktokLiveStore = require('./tiktokLiveStore');
 //   protokol internal mereka, di luar kendali kita.
 
 const REQUEST_REGEX = /^!request\s+(.+)$/i;
+const AUTOPLAY_REGEX = /^!autoplay\s+(on|off)$/i;
 const RETRY_DELAY_MS = 30_000;
 // Username TikTok: huruf/angka/titik/underscore, 2-24 karakter (aturan
 // resmi TikTok panjangnya maks 24).
@@ -35,6 +39,7 @@ function setLogger(fn) {
 let tiktokUsername = null;
 let setByTag = null;
 let onRequestCallback = null;
+let onAutoplayToggleCallback = null;
 let connection = null;
 let connected = false;
 let stopped = true;
@@ -89,13 +94,24 @@ function handleChatComment(data) {
     // sesuai bentuk mentah protobuf WebcastChatMessage yang di-emit apa
     // adanya, nggak di-"cantik"-in nama field-nya sama library-nya.
     const comment = (data?.content || '').trim();
-    const match = comment.match(REQUEST_REGEX);
-    if (!match) return;
-    const query = match[1].trim();
-    if (!query) return;
     const requester = data?.user?.displayId || data?.user?.nickname || 'penonton TikTok';
-    log(`[TIKTOK] Request dari @${requester}: "${query}"`);
-    if (onRequestCallback) onRequestCallback(query, requester);
+
+    const requestMatch = comment.match(REQUEST_REGEX);
+    if (requestMatch) {
+      const query = requestMatch[1].trim();
+      if (!query) return;
+      log(`[TIKTOK] Request dari @${requester}: "${query}"`);
+      if (onRequestCallback) onRequestCallback(query, requester);
+      return;
+    }
+
+    const autoplayMatch = comment.match(AUTOPLAY_REGEX);
+    if (autoplayMatch) {
+      const enabled = autoplayMatch[1].toLowerCase() === 'on';
+      log(`[TIKTOK] Autoplay di-${enabled ? 'ON' : 'OFF'}-in oleh @${requester}`);
+      if (onAutoplayToggleCallback) onAutoplayToggleCallback(enabled, requester);
+      return;
+    }
   } catch (err) {
     log(`[TIKTOK] Gagal proses comment: ${err?.message || err}`);
   }
@@ -176,11 +192,15 @@ function startHealthCheck() {
  * diambil dari penyimpanan (`tiktokLiveStore`, diisi lewat tombol TikTok di
  * panel -- bisa siapa aja) kalau ada, atau fallback ke `defaultUsername`
  * (dari `.env`, dipakai kalau belum ada yang set apa-apa lewat panel sama
- * sekali). `onRequest(query, requester)` dipanggil tiap ada comment
- * "!request <judul>" valid yang ketangkep.
+ * sekali).
+ *
+ * `handlers.onRequest(query, requester)` dipanggil tiap ada comment
+ * "!request <judul>" valid. `handlers.onAutoplayToggle(enabled, requester)`
+ * dipanggil tiap ada comment "!autoplay on"/"!autoplay off" valid.
  */
-function init(defaultUsername, onRequest) {
-  onRequestCallback = onRequest;
+function init(defaultUsername, handlers) {
+  onRequestCallback = handlers?.onRequest || null;
+  onAutoplayToggleCallback = handlers?.onAutoplayToggle || null;
   stopped = false;
 
   tiktokLiveStore.load();
@@ -270,11 +290,12 @@ function buildTiktokInfoEmbed() {
     [
       statusLine + setByLine,
       '',
-      'Pas live, siapapun bisa request lagu lewat kolom komentar:',
+      'Pas live, siapapun bisa pakai command ini lewat kolom komentar:',
       '```!request <judul lagu>```',
-      'Contoh: `!request Virgoun - Bukti`',
-      '',
-      'Lagunya bakal otomatis masuk antrian musik bot ini, sama persis kayak `/play`.',
+      'Contoh: `!request Virgoun - Bukti` — lagunya otomatis masuk antrian musik bot ini, sama persis kayak `/play`.',
+      '```!autoplay on```',
+      '```!autoplay off```',
+      'Nyalain/matiin fitur Autoplay musik, sama persis kayak tombol **AutoPlay** di card Now Playing.',
       '',
       '_Ganti ke username lain kapan aja lewat tombol **Set Username** di bawah._',
     ].join('\n')
