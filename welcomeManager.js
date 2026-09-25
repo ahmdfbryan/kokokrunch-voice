@@ -5,6 +5,7 @@
 // ini", siapapun dia, kapanpun.
 
 const { EmbedBuilder } = require('discord.js');
+const botBranding = require('./botBranding');
 
 const WELCOME_COLOR = 0x3b82f6; // biru, senada tema panel & fitur lain
 
@@ -31,7 +32,7 @@ function pickTagline() {
 function buildWelcomeEmbed(member) {
   const displayName = member.displayName || member.user.username;
 
-  return new EmbedBuilder()
+  const embed = new EmbedBuilder()
     .setColor(WELCOME_COLOR)
     .setAuthor({ name: '🎙️  Member Baru Masuk Voice!' })
     .setThumbnail(member.user.displayAvatarURL({ size: 256 }))
@@ -41,9 +42,8 @@ function buildWelcomeEmbed(member) {
         '',
         pickTagline(),
       ].join('\n')
-    )
-    .setFooter({ text: 'KokoKrunch Studios' })
-    .setTimestamp();
+    );
+  return botBranding.applyBrandFooter(embed);
 }
 
 module.exports = { buildWelcomeEmbed };
