@@ -86,14 +86,19 @@ function buildNowPlayingCard(guildId) {
     embed.setURL(track.url);
   }
 
-  const row = new ActionRowBuilder().addComponents(
+  // Dipecah jadi 2 row (maks 3 tombol/row) -- selain emang udah kena limit
+  // asli Discord (5 tombol/row) begitu "Lirik" ditambahin, ini juga biar
+  // konsisten sama aturan tampilan yang dipakai di panel utama.
+  const row1 = new ActionRowBuilder().addComponents(
     new ButtonBuilder()
       .setCustomId('music_pause')
       .setLabel(paused ? 'Resume' : 'Pause')
       .setEmoji(paused ? '▶️' : '⏸️')
       .setStyle(ButtonStyle.Primary),
     new ButtonBuilder().setCustomId('music_skip').setLabel('Skip').setEmoji('⏭️').setStyle(ButtonStyle.Secondary),
-    new ButtonBuilder().setCustomId('music_stop').setLabel('Stop').setEmoji('⏹️').setStyle(ButtonStyle.Danger),
+    new ButtonBuilder().setCustomId('music_stop').setLabel('Stop').setEmoji('⏹️').setStyle(ButtonStyle.Danger)
+  );
+  const row2 = new ActionRowBuilder().addComponents(
     new ButtonBuilder()
       .setCustomId('music_loop')
       .setLabel(loopMeta.label)
@@ -103,10 +108,12 @@ function buildNowPlayingCard(guildId) {
       .setCustomId('music_autoplay')
       .setLabel(`AutoPlay: ${queue.autoplayEnabled ? 'On' : 'Off'}`)
       .setEmoji('🔀')
-      .setStyle(queue.autoplayEnabled ? ButtonStyle.Success : ButtonStyle.Secondary)
+      .setStyle(queue.autoplayEnabled ? ButtonStyle.Success : ButtonStyle.Secondary),
+    // Tombol info (nggak ngubah state lagu), jadi warnanya netral abu-abu.
+    new ButtonBuilder().setCustomId('music_lyrics').setLabel('Lirik').setEmoji('🎤').setStyle(ButtonStyle.Secondary)
   );
 
-  return { embed, components: [row] };
+  return { embed, components: [row1, row2] };
 }
 
 // Kunci per-guild buat operasi baca-tulis "pesan Now Playing yang lagi
