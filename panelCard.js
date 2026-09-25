@@ -136,12 +136,13 @@ function buildFeaturedButtons() {
     new ButtonBuilder().setCustomId('panel_idcard').setLabel('ID Card').setEmoji('🪪').setStyle(ButtonStyle.Secondary),
     new ButtonBuilder().setCustomId('panel_tiktok').setLabel('TikTok').setEmoji('📱').setStyle(ButtonStyle.Secondary)
   );
+  // Voice Stats gabung bareng Home di baris ke-2 (dipisah row sendiri kurang
+  // enak dipandang, jadi disatuin lagi).
   const row2 = new ActionRowBuilder().addComponents(
-    new ButtonBuilder().setCustomId('panel_voicestats').setLabel('Voice Stats').setEmoji('📊').setStyle(ButtonStyle.Secondary)
+    new ButtonBuilder().setCustomId('panel_voicestats').setLabel('Voice Stats').setEmoji('📊').setStyle(ButtonStyle.Secondary),
+    buildHomeButton()
   );
-  // Home sendirian di baris ke-3 (bukan numpang di row2 bareng Voice Stats lagi).
-  const row3 = new ActionRowBuilder().addComponents(buildHomeButton());
-  return [row1, row2, row3];
+  return [row1, row2];
 }
 
 /**
