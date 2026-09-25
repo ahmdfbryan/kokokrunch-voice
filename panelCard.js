@@ -69,17 +69,20 @@ function buildHomeEmbed(client, commandCount) {
 
   return new EmbedBuilder()
     .setColor(PANEL_COLOR)
-    .setAuthor({ name: 'SATPAM VOICE — Panel Utama', iconURL: botAvatarURL || undefined })
+    // setTitle (bukan setAuthor) -- Discord otomatis nampilin title dengan
+    // font lebih besar & bold, jadi "SATPAM VOICE" keliatan tegas tanpa
+    // perlu markdown ** (author.name nggak render markdown & fontnya kecil).
+    .setTitle('SATPAM VOICE')
     .setDescription(
       [
-        '**Akses semua fitur bot Satpam Voice cukup dari panel ini.**',
+        '**Mau menggunakan fitur Satpam Voice? Semua kontrolnya sudah tersedia di panel ini. Tinggal pilih fitur yang kamu butuhkan, dan bot siap membantu.**',
         '',
         '**Stats**',
-        `> 📜 \`${commandCount ?? 0}\` Commands`,
-        `> ⏱️ \`${uptimeText}\` Uptime`,
-        `> 📶 \`${pingMs}ms\` Ping`,
-        '> 🟢 `Online` Status',
-        '> Made by `Satpam Voice`',
+        `> **📜 \`${commandCount ?? 0}\` Commands**`,
+        `> **⏱️ \`${uptimeText}\` Uptime**`,
+        `> **📶 \`${pingMs}ms\` Ping**`,
+        '> **🟢 `Online` Status**',
+        '> **Made by `Satpam Voice`**',
       ].join('\n')
     )
     .setThumbnail(botAvatarURL || null)
