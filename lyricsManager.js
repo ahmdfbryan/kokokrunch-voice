@@ -22,6 +22,7 @@
 const fetch = require('node-fetch');
 const cheerio = require('cheerio');
 const { EmbedBuilder } = require('discord.js');
+const config = require('./config');
 
 const LYRICS_COLOR = 0x5865f2; // biru, senada tema fitur Musik
 const MAX_DESC_LENGTH = 3900; // batas aman embed description (limit Discord 4096)
@@ -108,11 +109,32 @@ async function fetchFromLrclib(cleanedTitle, normalized) {
 
 /**
  * SUMBER 2: Genius (via scraping). Genius nggak punya API lirik publik
- * resmi, tapi endpoint search bawaan situsnya (`/api/search/multi`) bisa
- * diakses tanpa API key, dan halaman lagunya nampilin lirik lengkap di
- * elemen `[data-lyrics-container="true"]` yang tinggal diambil teksnya.
+ * resmi (lirik LENGKAP nggak boleh dikasih lewat API karena lisensi), tapi
+ * database judul lagunya lengkap banget -- jadi kita cuma pakai API/search
+ * Genius buat NEMUIN halaman lagunya, terus lirik teksnya diambil langsung
+ * dari HTML halaman itu (elemen `[data-lyrics-container="true"]`).
+ *
+ * Ada 2 cara nyari halaman lagunya:
+ *   a) API resmi `api.genius.com/search` -- butuh token gratis (isi
+ *      GENIUS_ACCESS_TOKEN di .env, daftar di genius.com/api-clients),
+ *      hasilnya jauh lebih AKURAT & jarang diblokir dibanding cara (b).
+ *   b) Endpoint pencarian situsnya sendiri `genius.com/api/search/multi`
+ *      -- nggak butuh token, tapi kadang diblokir/dianggap bot kalau
+ *      requestnya dari IP VPS/datacenter. Dipakai sebagai fallback kalau
+ *      token nggak diisi, atau cara (a) gagal.
  */
-async function searchGeniusSongUrl(query) {
+async function searchGeniusOfficial(query, token) {
+  const url = `https://api.genius.com/search?q=${encodeURIComponent(query)}`;
+  const res = await withTimeout(fetch(url, { headers: { Authorization: `Bearer ${token}` } }), 8000, 'Genius API');
+  if (!res.ok) throw new Error(`Genius API error ${res.status}`);
+  const data = await res.json();
+  const hits = data?.response?.hits || [];
+  const hit = (hits.find((h) => h.type === 'song') || hits[0])?.result;
+  if (!hit?.url) return null;
+  return { pageUrl: hit.url, artist: hit.primary_artist?.name, track: hit.title };
+}
+
+async function searchGeniusUnofficial(query) {
   const url = `https://genius.com/api/search/multi?q=${encodeURIComponent(query)}`;
   const res = await withTimeout(
     fetch(url, { headers: { 'User-Agent': BROWSER_USER_AGENT, Accept: 'application/json' } }),
@@ -126,6 +148,19 @@ async function searchGeniusSongUrl(query) {
   const hit = songSection?.hits?.[0]?.result;
   if (!hit?.url) return null;
   return { pageUrl: hit.url, artist: hit.primary_artist?.name, track: hit.title };
+}
+
+async function searchGeniusSongUrl(query) {
+  if (config.geniusAccessToken) {
+    try {
+      const found = await searchGeniusOfficial(query, config.geniusAccessToken);
+      if (found) return found;
+    } catch {
+      // Token invalid/expired/Genius API lagi gangguan -- tetep coba cara
+      // tanpa token di bawah sebelum benar-benar nyerah.
+    }
+  }
+  return searchGeniusUnofficial(query);
 }
 
 async function scrapeGeniusLyrics(pageUrl) {
