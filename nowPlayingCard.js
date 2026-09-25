@@ -3,12 +3,6 @@ const musicManager = require('./musicManager');
 const botBranding = require('./botBranding');
 
 const COLOR = 0x5865f2;
-const LOOP_CYCLE = ['off', 'track', 'queue'];
-const LOOP_META = {
-  off: { label: 'Loop: Off', emoji: '➡️', fieldValue: 'Off' },
-  track: { label: 'Loop: Track', emoji: '🔂', fieldValue: 'Lagu Ini' },
-  queue: { label: 'Loop: Queue', emoji: '🔁', fieldValue: 'Antrian' },
-};
 
 function formatTime(totalSeconds) {
   const total = Math.max(0, Math.floor(totalSeconds || 0));
@@ -28,14 +22,6 @@ function renderProgressBar(elapsed, total, length = 8) {
   const ratio = Math.min(1, Math.max(0, elapsed / total));
   const filled = Math.round(ratio * (length - 1));
   return '▬'.repeat(filled) + '🔘' + '▬'.repeat(Math.max(0, length - filled - 1));
-}
-
-/**
- * Loop mode berikutnya kalau tombol Loop diklik: off -> track -> queue -> off -> ...
- */
-function cycleLoopMode(current) {
-  const idx = LOOP_CYCLE.indexOf(current);
-  return LOOP_CYCLE[(idx + 1) % LOOP_CYCLE.length];
 }
 
 /**
@@ -61,10 +47,6 @@ function buildNowPlayingCard(guildId) {
   const total = track.durationSeconds || 0;
   const bar = renderProgressBar(elapsed, total);
   const paused = musicManager.isPaused();
-  const volumePercent = Math.round(musicManager.getVolume(guildId) * 100);
-  const loopMode = musicManager.getLoopMode(guildId);
-  const loopMeta = LOOP_META[loopMode] || LOOP_META.off;
-  const volumeIcon = volumePercent === 0 ? '🔇' : volumePercent < 50 ? '🔉' : '🔊';
 
   const embed = new EmbedBuilder()
     .setColor(COLOR)
@@ -72,12 +54,7 @@ function buildNowPlayingCard(guildId) {
     .setTitle(track.title)
     .setDescription(`👤 Added by **${track.requestedBy}**${track.isAutoplay ? '  •  _via Autoplay_' : ''}`)
     .setThumbnail(track.thumbnail || null)
-    .addFields(
-      { name: '\u200b', value: `**${formatTime(elapsed)}** ${bar} **${formatTime(total)}**` },
-      { name: '📜 Queue', value: `${queue.tracks.length} song${queue.tracks.length === 1 ? '' : 's'}`, inline: true },
-      { name: `${volumeIcon} Volume`, value: `${volumePercent}%`, inline: true },
-      { name: `${loopMeta.emoji} Loop`, value: loopMeta.fieldValue, inline: true }
-    );
+    .addFields({ name: '\u200b', value: `**${formatTime(elapsed)}** ${bar} **${formatTime(total)}**` });
   botBranding.applyBrandFooter(embed);
 
   // Judul jadi link ke video aslinya -- tapi cuma kalau url-nya beneran
@@ -99,11 +76,10 @@ function buildNowPlayingCard(guildId) {
     new ButtonBuilder().setCustomId('music_stop').setLabel('Stop').setEmoji('⏹️').setStyle(ButtonStyle.Danger)
   );
   const row2 = new ActionRowBuilder().addComponents(
-    new ButtonBuilder()
-      .setCustomId('music_loop')
-      .setLabel(loopMeta.label)
-      .setEmoji(loopMeta.emoji)
-      .setStyle(loopMode === 'off' ? ButtonStyle.Secondary : ButtonStyle.Success),
+    // Tombol info (nggak ngubah state lagu), jadi warnanya netral abu-abu.
+    // Mode loop sendiri tetep bisa diatur lewat /loop, cuma nggak ada
+    // tombol togglenya lagi di card ini.
+    new ButtonBuilder().setCustomId('music_queue').setLabel('Queue').setEmoji('📜').setStyle(ButtonStyle.Secondary),
     new ButtonBuilder()
       .setCustomId('music_autoplay')
       .setLabel(`AutoPlay: ${queue.autoplayEnabled ? 'On' : 'Off'}`)
@@ -166,4 +142,4 @@ async function claimNowPlayingCard(guildId, client, sendFn) {
   });
 }
 
-module.exports = { buildNowPlayingCard, cycleLoopMode, withNowPlayingLock, claimNowPlayingCard };
+module.exports = { buildNowPlayingCard, withNowPlayingLock, claimNowPlayingCard };
