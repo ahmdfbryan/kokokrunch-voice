@@ -37,6 +37,8 @@ const { buildNowPlayingCard, cycleLoopMode, withNowPlayingLock } = require('./no
 const voiceActivity = require('./voiceActivity');
 const welcomeManager = require('./welcomeManager');
 const botBranding = require('./botBranding');
+const tiktokLive = require('./tiktokLive');
+const { handleTikTokRequest } = require('./tiktokRequestManager');
 const stickyMessage = require('./stickyMessage');
 const stickyManager = require('./stickyManager');
 const { handlePrefixCommand } = require('./prefixCommands');
@@ -363,6 +365,7 @@ function log(msg) {
 // ditolak) nyampur di pm2 logs yang sama, bukan console.log polos --
 // gampang buat nge-debug kalau ada laporan "lirik nggak ketemu"/"salah lagu".
 lyricsManager.setLogger(log);
+tiktokLive.setLogger(log);
 
 // ============================================================
 // PANEL: skip/stop lewat tombol panel -- logikanya sama persis kayak
@@ -1012,6 +1015,18 @@ client.on('interactionCreate', async (interaction) => {
         });
       } catch (err) {
         log(`[PANEL] Error tombol panel_idcard: ${err?.stack || err}`);
+      }
+      return;
+    }
+
+    if (interaction.customId === 'panel_tiktok') {
+      try {
+        await interaction.reply({
+          embeds: [tiktokLive.buildTiktokInfoEmbed()],
+          flags: MessageFlags.Ephemeral,
+        });
+      } catch (err) {
+        log(`[PANEL] Error tombol panel_tiktok: ${err?.stack || err}`);
       }
       return;
     }
@@ -1762,6 +1777,20 @@ client.once('ready', () => {
   startHealthCheck();
   populateExistingVoiceSessions();
   giveawayManager.startScheduler(client);
+  // Fitur request musik dari live TikTok ("!request <judul>") -- otomatis
+  // nonaktif kalau TIKTOK_USERNAME nggak diisi di .env.
+  tiktokLive.init(config.tiktokUsername, async (query, requester) => {
+    if (!currentGuildId) {
+      log(`[TIKTOK] Request "${query}" dari @${requester} diabaikan, bot belum ready/connect ke voice channel.`);
+      return;
+    }
+    try {
+      const channel = await client.channels.fetch(config.voiceChannelId);
+      await handleTikTokRequest({ guildId: currentGuildId, channel, client, query, requester, log });
+    } catch (err) {
+      log(`[TIKTOK] Gagal proses request "${query}" dari @${requester}: ${err?.stack || err}`);
+    }
+  });
   // Checkpoint berkala biar data voice activity nggak ilang banyak kalau
   // proses crash di tengah sesi panjang.
   setInterval(() => voiceActivity.checkpointAll(), 5 * 60 * 1000);
