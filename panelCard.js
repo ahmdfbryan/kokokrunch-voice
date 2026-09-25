@@ -69,13 +69,14 @@ function buildHomeEmbed(client, commandCount) {
 
   return new EmbedBuilder()
     .setColor(PANEL_COLOR)
-    // setTitle (bukan setAuthor) -- Discord otomatis nampilin title dengan
-    // font lebih besar & bold, jadi "SATPAM VOICE" keliatan tegas tanpa
-    // perlu markdown ** (author.name nggak render markdown & fontnya kecil).
-    .setTitle('SATPAM VOICE')
+    // Author (bukan Title) -- ini satu-satunya field embed yang bisa
+    // nampilin logo/icon bot di samping teksnya. Discord nggak nge-render
+    // markdown ** di author.name, jadi teksnya nggak bold beneran, tapi
+    // fontnya sendiri udah lumayan tegas/semi-bold secara default.
+    .setAuthor({ name: 'SATPAM VOICE', iconURL: botAvatarURL || undefined })
     .setDescription(
       [
-        '**Mau menggunakan fitur Satpam Voice? Semua kontrolnya sudah tersedia di panel ini. Tinggal pilih fitur yang kamu butuhkan, dan bot siap membantu.**',
+        '**Mau menggunakan fitur Satpam Voice? Semua kontrolnya sudah tersedia di panel ini.**',
         '',
         '**Stats**',
         `> **📜 \`${commandCount ?? 0}\` Commands**`,
