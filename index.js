@@ -56,6 +56,7 @@ const {
   buildVoiceStatsSelectRow,
   buildStreakSubRow,
   buildIdCardSubRow,
+  buildTiktokSubRow,
   PANEL_COLOR,
 } = require('./panelCard');
 const streakStore = require('./streakStore');
@@ -1023,10 +1024,47 @@ client.on('interactionCreate', async (interaction) => {
       try {
         await interaction.reply({
           embeds: [tiktokLive.buildTiktokInfoEmbed()],
+          components: [buildTiktokSubRow(tiktokLive.getStatus())],
           flags: MessageFlags.Ephemeral,
         });
       } catch (err) {
         log(`[PANEL] Error tombol panel_tiktok: ${err?.stack || err}`);
+      }
+      return;
+    }
+
+    // Siapa aja boleh set/ganti username -- BUKAN cuma pemilik bot, biar
+    // member lain yang lagi live TikKok juga bisa pakai fitur request ini
+    // pas si pemilik bot lagi nggak live.
+    if (interaction.customId === 'panel_tiktok_setusername') {
+      try {
+        const current = tiktokLive.getStatus();
+        const modal = new ModalBuilder().setCustomId('panel_tiktok_username_modal').setTitle('Set Username TikTok');
+        const usernameInput = new TextInputBuilder()
+          .setCustomId('panel_tiktok_username')
+          .setLabel('Username TikTok (tanpa @)')
+          .setStyle(TextInputStyle.Short)
+          .setRequired(true)
+          .setMaxLength(24)
+          .setPlaceholder('misal: username_tiktok_kamu');
+        if (current.username && typeof usernameInput.setValue === 'function') usernameInput.setValue(current.username);
+        modal.addComponents(new ActionRowBuilder().addComponents(usernameInput));
+        await interaction.showModal(modal);
+      } catch (err) {
+        log(`[PANEL] Error tombol panel_tiktok_setusername: ${err?.stack || err}`);
+      }
+      return;
+    }
+
+    if (interaction.customId === 'panel_tiktok_disable') {
+      try {
+        tiktokLive.clearUsername();
+        await interaction.reply({
+          content: '✅ Fitur request musik TikTok LIVE dimatikan.',
+          flags: MessageFlags.Ephemeral,
+        });
+      } catch (err) {
+        log(`[PANEL] Error tombol panel_tiktok_disable: ${err?.stack || err}`);
       }
       return;
     }
@@ -1504,6 +1542,33 @@ client.on('interactionCreate', async (interaction) => {
         });
       } catch (err) {
         log(`[PANEL] Error panel_streak_rename_modal: ${err?.stack || err}`);
+      }
+      return;
+    }
+
+    if (interaction.customId === 'panel_tiktok_username_modal') {
+      try {
+        const raw = interaction.fields.getTextInputValue('panel_tiktok_username');
+        const result = tiktokLive.setUsername(raw, interaction.user.tag);
+        if (!result.ok) {
+          await interaction.reply({
+            content: 'Username TikTok nggak valid. Cuma boleh huruf, angka, titik, underscore, 2-24 karakter (tanpa @).',
+            flags: MessageFlags.Ephemeral,
+          });
+          return;
+        }
+        await interaction.reply({
+          embeds: [
+            new EmbedBuilder()
+              .setColor(0x57f287)
+              .setDescription(
+                `✅ Username TikTok di-set ke **@${result.username}**.\nBot lagi nyoba connect ke live-nya sekarang -- cek status lewat tombol **TikTok** di panel lagi kalau mau mastiin udah nyambung.`
+              ),
+          ],
+          flags: MessageFlags.Ephemeral,
+        });
+      } catch (err) {
+        log(`[PANEL] Error panel_tiktok_username_modal: ${err?.stack || err}`);
       }
       return;
     }
