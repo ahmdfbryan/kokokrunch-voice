@@ -30,6 +30,10 @@ module.exports = {
   // gagal dibanding lewat endpoint publik Genius yang nggak resmi. Kalau
   // dikosongin, fitur Lirik tetap jalan tapi coverage-nya lebih terbatas.
   geniusAccessToken: process.env.GENIUS_ACCESS_TOKEN || null,
+  // Opsional -- username TikTok (tanpa "@") buat fitur request musik dari
+  // live TikTok ("!request <judul lagu>" di kolom komentar). Kalau
+  // dikosongin, fitur ini otomatis nonaktif (nggak ganggu fitur lain).
+  tiktokUsername: process.env.TIKTOK_USERNAME || null,
   // Jeda sebelum mencoba reconnect setelah terputus (ms)
   reconnectDelayMs: 5000,
   // Interval health check buat mastiin bot masih di voice channel (ms)
