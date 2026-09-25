@@ -1,5 +1,6 @@
 const { EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle } = require('discord.js');
 const store = require('./giveawayStore');
+const botBranding = require('./botBranding');
 
 const { loadAll, saveAll } = store;
 
@@ -56,29 +57,8 @@ function tsField(ms) {
   return Math.floor(ms / 1000);
 }
 
-// "11/08/2026, 21:12 WIB" style timestamp untuk footer.
-function formatFooterNow(date = new Date()) {
-  const datePart = new Intl.DateTimeFormat('en-GB', {
-    day: '2-digit',
-    month: '2-digit',
-    year: 'numeric',
-    timeZone: 'Asia/Jakarta',
-  }).format(date);
-  const timePart = new Intl.DateTimeFormat('id-ID', {
-    hour: '2-digit',
-    minute: '2-digit',
-    hour12: false,
-    timeZone: 'Asia/Jakarta',
-  }).format(date);
-  return `${datePart}, ${timePart} WIB`;
-}
-
-function footerText() {
-  return `KokoKrunch Studio • Giveaway System • ${formatFooterNow()}`;
-}
-
 function buildActiveEmbed(g) {
-  return new EmbedBuilder()
+  const embed = new EmbedBuilder()
     .setColor(COLOR_ACTIVE)
     .setTitle('🎉 Giveaway Started!')
     .setDescription('Klik tombol **Join** di bawah untuk ikut giveaway ini!')
@@ -87,8 +67,8 @@ function buildActiveEmbed(g) {
       { name: '🏆 Winners', value: `${g.winnerCount}`, inline: true },
       { name: '👥 Participants', value: `${g.participants.length}`, inline: true },
       { name: '⏰ Ends', value: `<t:${tsField(g.endTime)}:F>\n(<t:${tsField(g.endTime)}:R>)`, inline: false }
-    )
-    .setFooter({ text: footerText() });
+    );
+  return botBranding.applyBrandFooter(embed);
 }
 
 function buildActiveButtonRow(disabled = false) {
@@ -102,10 +82,8 @@ function buildActiveButtonRow(disabled = false) {
 
 function buildEndedEmbed(g, winnerIds, { title = '🎉 Giveaway Ended' } = {}) {
   const hasWinners = winnerIds.length > 0;
-  const embed = new EmbedBuilder()
-    .setColor(hasWinners ? COLOR_ENDED_WIN : COLOR_ENDED_EMPTY)
-    .setTitle(title)
-    .setFooter({ text: footerText() });
+  const embed = new EmbedBuilder().setColor(hasWinners ? COLOR_ENDED_WIN : COLOR_ENDED_EMPTY).setTitle(title);
+  botBranding.applyBrandFooter(embed);
 
   if (!hasWinners) {
     embed.setDescription(`**${g.prize}**\n\n😢 Tidak ada peserta yang valid, giveaway ini tidak memiliki pemenang.`);
