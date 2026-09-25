@@ -110,7 +110,12 @@ async function attemptConnect() {
 
     if (usernameAtStart !== tiktokUsername || stopped) return; // keburu diganti/dimatiin
 
-    connection = new TikTokLiveConnection(usernameAtStart);
+    // Versi library yang dipakai (2.5.0) WAJIB dikasih argumen ke-2 (options)
+    // -- kalau di-skip sama sekali (bukan cuma `{}` kosong), constructor-nya
+    // crash "Cannot read properties of undefined (reading 'processInitialData')"
+    // pas nyoba baca `options.processInitialData`. Makanya di sini SELALU
+    // dikasih objek kosong secara eksplisit.
+    connection = new TikTokLiveConnection(usernameAtStart, {});
     connection.on(WebcastEvent.CHAT, handleChatComment);
     connection.on('disconnected', () => {
       connected = false;
@@ -121,7 +126,11 @@ async function attemptConnect() {
       log('[TIKTOK] Live TikTok kelihatannya udah berakhir.');
     });
     connection.on('error', (err) => {
-      log(`[TIKTOK] Error koneksi: ${err?.message || err}`);
+      // Error dari library ini kadang bukan instance Error asli (plain
+      // object dengan field `.info`), jadi `${err}` doang bisa jadi
+      // "[object Object]" -- diprioritasin `.info`/`.message` dulu biar
+      // log-nya kebaca jelas.
+      log(`[TIKTOK] Error koneksi: ${err?.info || err?.message || err}`);
     });
 
     const state = await connection.connect();
