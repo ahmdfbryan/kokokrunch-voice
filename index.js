@@ -35,6 +35,7 @@ const musicPlaylistStore = require('./musicPlaylistStore');
 const lyricsManager = require('./lyricsManager');
 const { buildNowPlayingCard, cycleLoopMode, withNowPlayingLock } = require('./nowPlayingCard');
 const voiceActivity = require('./voiceActivity');
+const welcomeManager = require('./welcomeManager');
 const stickyMessage = require('./stickyMessage');
 const stickyManager = require('./stickyManager');
 const { handlePrefixCommand } = require('./prefixCommands');
@@ -708,6 +709,23 @@ client.on('voiceStateUpdate', (oldState, newState) => {
   // Bot pindah channel atau keluar voice
   if (oldState.channelId === config.voiceChannelId && newState.channelId !== config.voiceChannelId) {
     handleConnectionDrop('Bot terdeteksi keluar/dipindah dari voice channel target, rejoin...');
+  }
+});
+
+// Pesan sambutan tiap kali ada member yang BARU join voice channel target
+// Satpam Voice (bukan lagi di situ sebelumnya) -- dikirim ke text chat
+// bawaan voice channel itu sendiri ("Voice Channel Chat"). Bot butuh izin
+// Send Messages & Embed Links di voice channel target buat ini jalan.
+client.on('voiceStateUpdate', async (oldState, newState) => {
+  const member = newState.member;
+  if (!member || member.user.bot) return;
+  if (newState.channelId !== config.voiceChannelId) return;
+  if (oldState.channelId === config.voiceChannelId) return; // udah di channel ini sebelumnya, bukan join baru
+
+  try {
+    await newState.channel.send({ embeds: [welcomeManager.buildWelcomeEmbed(member)] });
+  } catch (err) {
+    log(`[WELCOME] Gagal kirim pesan sambutan buat ${member.user.tag}: ${err?.stack || err}`);
   }
 });
 
