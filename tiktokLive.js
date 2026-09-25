@@ -84,12 +84,16 @@ function disconnectCurrent() {
 
 function handleChatComment(data) {
   try {
-    const comment = (data?.comment || '').trim();
+    // Field pesan chat di versi library ini `content` (bukan `comment`),
+    // dan username-nya `user.displayId` (bukan `user.uniqueId`) -- ini
+    // sesuai bentuk mentah protobuf WebcastChatMessage yang di-emit apa
+    // adanya, nggak di-"cantik"-in nama field-nya sama library-nya.
+    const comment = (data?.content || '').trim();
     const match = comment.match(REQUEST_REGEX);
     if (!match) return;
     const query = match[1].trim();
     if (!query) return;
-    const requester = data?.user?.uniqueId || data?.user?.nickname || 'penonton TikTok';
+    const requester = data?.user?.displayId || data?.user?.nickname || 'penonton TikTok';
     log(`[TIKTOK] Request dari @${requester}: "${query}"`);
     if (onRequestCallback) onRequestCallback(query, requester);
   } catch (err) {
@@ -287,4 +291,7 @@ module.exports = {
   setUsername,
   clearUsername,
   USERNAME_REGEX,
+  // Diekspor cuma buat regression test (parsing pesan chat) -- bukan API
+  // yang dipakai dari luar modul ini.
+  _handleChatCommentForTest: handleChatComment,
 };
