@@ -38,7 +38,7 @@ function buildPanelCard(botAvatarURL) {
       ].join('\n')
     )
     .setThumbnail(botAvatarURL || null)
-    .setFooter({ text: 'KokoKrunch Studios', iconURL: botAvatarURL || undefined })
+    .setFooter({ text: 'Satpam Voice', iconURL: botAvatarURL || undefined })
     .setTimestamp();
 
   // Discord bakal WRAP tombol dalam 1 row ke baris baru kalau total lebar
