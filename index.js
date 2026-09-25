@@ -36,6 +36,7 @@ const lyricsManager = require('./lyricsManager');
 const { buildNowPlayingCard, withNowPlayingLock } = require('./nowPlayingCard');
 const voiceActivity = require('./voiceActivity');
 const welcomeManager = require('./welcomeManager');
+const welcomeStore = require('./welcomeStore');
 const botBranding = require('./botBranding');
 const tiktokLive = require('./tiktokLive');
 const { handleTikTokRequest } = require('./tiktokRequestManager');
@@ -515,6 +516,7 @@ stickyManager.init(client, log);
 panelStore.load();
 streakStore.load();
 idCardStore.load();
+welcomeStore.load();
 aiChat.init(log);
 
 const panelApi = { repositionChannelStack };
@@ -717,18 +719,24 @@ client.on('voiceStateUpdate', (oldState, newState) => {
   }
 });
 
-// Pesan sambutan tiap kali ada member yang BARU join voice channel target
-// Satpam Voice (bukan lagi di situ sebelumnya) -- dikirim ke text chat
-// bawaan voice channel itu sendiri ("Voice Channel Chat"). Bot butuh izin
-// Send Messages & Embed Links di voice channel target buat ini jalan.
+// Pesan sambutan pas ada member yang join voice channel target Satpam Voice
+// -- dikirim ke text chat bawaan voice channel itu sendiri ("Voice Channel
+// Chat"). Bot butuh izin Send Messages & Embed Links di voice channel
+// target buat ini jalan.
+//
+// Sengaja CUMA SEKALI SEUMUR HIDUP per member (dicatet di welcomeStore),
+// bukan tiap kali dia join -- begitu member itu pernah dapet sambutan,
+// join-join berikutnya nggak dikirim lagi.
 client.on('voiceStateUpdate', async (oldState, newState) => {
   const member = newState.member;
   if (!member || member.user.bot) return;
   if (newState.channelId !== config.voiceChannelId) return;
   if (oldState.channelId === config.voiceChannelId) return; // udah di channel ini sebelumnya, bukan join baru
+  if (welcomeStore.hasBeenWelcomed(member.id)) return; // udah pernah disambut sebelumnya
 
   try {
     await newState.channel.send({ embeds: [welcomeManager.buildWelcomeEmbed(member)] });
+    welcomeStore.markWelcomed(member.id);
   } catch (err) {
     log(`[WELCOME] Gagal kirim pesan sambutan buat ${member.user.tag}: ${err?.stack || err}`);
   }
