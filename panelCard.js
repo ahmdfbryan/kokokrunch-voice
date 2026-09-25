@@ -151,9 +151,8 @@ function buildFeaturedButtons() {
 
 /**
  * Baris tombol kontrol musik cepat, dipakai di balasan ephemeral pas
- * tombol "Musik" di panel utama diklik. Sekarang ada 6 tombol (Play, Skip,
- * Stop, Queue, Playlist, Home) jadi dipecah jadi 2 baris biar nggak nabrak
- * limit 5 tombol per baris punya Discord.
+ * tombol "Musik" di panel utama diklik. 6 tombol dibagi rata 3-3: baris 1
+ * Play/Skip/Stop, baris 2 Queue/Playlist/Home.
  */
 function buildMusicSubRow() {
   // Sama kayak layar Featured -- tombol aksinya dibikin netral (Secondary)
@@ -161,11 +160,13 @@ function buildMusicSubRow() {
   const row1 = new ActionRowBuilder().addComponents(
     new ButtonBuilder().setCustomId('panelmusic_play').setLabel('Play').setEmoji('▶️').setStyle(ButtonStyle.Secondary),
     new ButtonBuilder().setCustomId('panelmusic_skip').setLabel('Skip').setEmoji('⏭️').setStyle(ButtonStyle.Secondary),
-    new ButtonBuilder().setCustomId('panelmusic_stop').setLabel('Stop').setEmoji('⏹️').setStyle(ButtonStyle.Secondary),
-    new ButtonBuilder().setCustomId('panelmusic_queue').setLabel('Queue').setEmoji('📜').setStyle(ButtonStyle.Secondary),
-    new ButtonBuilder().setCustomId('panelmusic_playlist').setLabel('Playlist').setEmoji('📁').setStyle(ButtonStyle.Secondary)
+    new ButtonBuilder().setCustomId('panelmusic_stop').setLabel('Stop').setEmoji('⏹️').setStyle(ButtonStyle.Secondary)
   );
-  const row2 = new ActionRowBuilder().addComponents(buildHomeButton());
+  const row2 = new ActionRowBuilder().addComponents(
+    new ButtonBuilder().setCustomId('panelmusic_queue').setLabel('Queue').setEmoji('📜').setStyle(ButtonStyle.Secondary),
+    new ButtonBuilder().setCustomId('panelmusic_playlist').setLabel('Playlist').setEmoji('📁').setStyle(ButtonStyle.Secondary),
+    buildHomeButton()
+  );
   return [row1, row2];
 }
 
