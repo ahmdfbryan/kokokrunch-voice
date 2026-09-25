@@ -38,11 +38,11 @@ function buildPanelCard(botAvatarURL) {
         '🎵 **Musik** — Play • Skip • Stop',
         '🎁 **Giveaway** — Buat & pantau',
         '🔥 **Streak** — Grup chat harian',
-        '📊 **Voice Stats** — Aktivitas kamu',
         '🤖 **Tanya AI** — Ngobrol sama AI',
-        'ℹ️ **Info/Help** — Semua command',
         '🪪 **ID Card** — Kartu identitas',
         '📱 **TikTok** — Request lagu live',
+        '📊 **Voice Stats** — Aktivitas kamu',
+        'ℹ️ **Info/Help** — Semua command',
       ].join('\n')
     )
     .setThumbnail(botAvatarURL || null)
