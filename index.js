@@ -36,6 +36,7 @@ const lyricsManager = require('./lyricsManager');
 const { buildNowPlayingCard, cycleLoopMode, withNowPlayingLock } = require('./nowPlayingCard');
 const voiceActivity = require('./voiceActivity');
 const welcomeManager = require('./welcomeManager');
+const botBranding = require('./botBranding');
 const stickyMessage = require('./stickyMessage');
 const stickyManager = require('./stickyManager');
 const { handlePrefixCommand } = require('./prefixCommands');
@@ -1754,6 +1755,9 @@ client.on('messageCreate', async (message) => {
 
 client.once('ready', () => {
   log(`Login sebagai ${client.user.tag}`);
+  // Biar semua embed fitur lain (ID Card, Streak, Welcome, Giveaway, dst)
+  // bisa pasang logo bot di footer-nya tanpa perlu di-passing manual.
+  botBranding.setBotAvatarURL(client.user.displayAvatarURL());
   connectToVoice();
   startHealthCheck();
   populateExistingVoiceSessions();
