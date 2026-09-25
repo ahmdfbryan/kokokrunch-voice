@@ -53,11 +53,16 @@ const commands = require('./commands');
 const panelStore = require('./panelStore');
 const {
   buildPanelCard,
+  buildHomeOnlyRow,
+  buildFeaturedEmbed,
+  buildFeaturedButtons,
   buildMusicSubRow,
   buildVoiceStatsSelectRow,
   buildStreakSubRow,
   buildIdCardSubRow,
   buildTiktokSubRow,
+  buildGiveawaySubRow,
+  buildAskRow,
   PANEL_COLOR,
 } = require('./panelCard');
 const streakStore = require('./streakStore');
@@ -307,7 +312,7 @@ async function repositionChannelStack(guildId, channelId) {
     // Panel dikirim DULUAN (biar nempatin posisi lebih atas), baru Now
     // Playing nyusul (biar dia yang paling akhir/paling bawah).
     if (panel) {
-      const { embed, components } = buildPanelCard(client.user?.displayAvatarURL?.());
+      const { embed, components } = buildPanelCard(client, commands.length);
       const sentPanel = await channel.send({ embeds: [embed], components });
       panelStore.setPanelMessageId(channelId, sentPanel.id);
     }
@@ -473,6 +478,41 @@ function buildVoiceStatsEmbed(user) {
 
 // buildLeaderboardEmbed diimpor dari voiceActivityCommands.js (satu sumber
 // yang sama dipakai /voiceleaderboard DAN dropdown leaderboard di panel).
+
+// ============================================================
+// NAVIGASI PANEL (1 embed yang sama): panel publik yang sticky (dikirim
+// via /panel) TIDAK pernah diubah langsung -- itu tetap nampilin Panel
+// Utama buat semua orang (pesannya sendiri BUKAN ephemeral). Begitu ada
+// yang klik tombol navigasi apapun di panel publik itu, bot bikin SATU
+// balasan ephemeral baru (cuma keliatan buat yang klik). Dari situ,
+// navigasi selanjutnya (Home, Featured, pindah antar fitur) meng-update
+// PESAN EPHEMERAL itu-itu aja lewat interaction.update() -- makanya
+// kerasa "1 embed yang sama" biarpun user muter-muter ke banyak layar.
+//
+// Deteksinya gampang: cek apakah pesan yang tombolnya diklik itu ephemeral
+// atau bukan. Pesan publik (panel sticky) -> reply() (bikin sesi ephemeral
+// baru). Pesan ephemeral (sesi navigasi milik user itu sendiri) -> update()
+// di tempat.
+function isEphemeralSession(interaction) {
+  try {
+    return !!(
+      interaction.message &&
+      interaction.message.flags &&
+      typeof interaction.message.flags.has === 'function' &&
+      interaction.message.flags.has(MessageFlags.Ephemeral)
+    );
+  } catch {
+    return false;
+  }
+}
+
+async function respondPanelScreen(interaction, embed, components) {
+  if (isEphemeralSession(interaction)) {
+    await interaction.update({ embeds: [embed], components });
+  } else {
+    await interaction.reply({ embeds: [embed], components, flags: MessageFlags.Ephemeral });
+  }
+}
 
 async function handlePanelQueue(interaction) {
   const queue = musicManager.getQueue(interaction.guildId);
@@ -910,22 +950,38 @@ client.on('interactionCreate', async (interaction) => {
     }
 
     // ============================================================
-    // PANEL: semua tombol dari panel utama & sub-menunya. Semua balasannya
-    // ephemeral (cuma keliatan yang klik) supaya panel publik yang sticky
-    // itu nggak perlu berubah tampilan buat orang lain.
+    // PANEL: semua tombol dari panel utama & sub-menunya. Klik pertama dari
+    // panel publik yang sticky selalu bikin sesi ephemeral BARU (biar panel
+    // publiknya sendiri nggak berubah buat orang lain); klik-klik
+    // berikutnya (Home, Featured, pindah fitur) UPDATE pesan ephemeral itu
+    // di tempat, jadi kerasa "1 embed yang sama" -- lihat respondPanelScreen.
     // ============================================================
+    if (interaction.customId === 'panel_home') {
+      try {
+        const { embed, components } = buildPanelCard(client, commands.length);
+        await respondPanelScreen(interaction, embed, components);
+      } catch (err) {
+        log(`[PANEL] Error tombol panel_home: ${err?.stack || err}`);
+      }
+      return;
+    }
+
+    if (interaction.customId === 'panel_featured') {
+      try {
+        await respondPanelScreen(interaction, buildFeaturedEmbed(), buildFeaturedButtons());
+      } catch (err) {
+        log(`[PANEL] Error tombol panel_featured: ${err?.stack || err}`);
+      }
+      return;
+    }
+
     if (interaction.customId === 'panel_music') {
       try {
-        await interaction.reply({
-          embeds: [
-            new EmbedBuilder()
-              .setColor(PANEL_COLOR)
-              .setAuthor({ name: '🎵  Kontrol Musik' })
-              .setDescription('Pilih aksi di bawah ini.'),
-          ],
-          components: [buildMusicSubRow()],
-          flags: MessageFlags.Ephemeral,
-        });
+        const embed = new EmbedBuilder()
+          .setColor(PANEL_COLOR)
+          .setAuthor({ name: '🎵  Kontrol Musik' })
+          .setDescription('Pilih aksi di bawah ini.');
+        await respondPanelScreen(interaction, embed, [buildMusicSubRow()]);
       } catch (err) {
         log(`[PANEL] Error tombol panel_music: ${err?.stack || err}`);
       }
@@ -935,22 +991,11 @@ client.on('interactionCreate', async (interaction) => {
     if (interaction.customId === 'panel_giveaway') {
       try {
         const canManage = interaction.memberPermissions?.has(PermissionFlagsBits.ManageGuild);
-        const row = new ActionRowBuilder().addComponents(
-          new ButtonBuilder().setCustomId('panelgw_list').setLabel('Lihat Aktif').setEmoji('📋').setStyle(ButtonStyle.Secondary),
-          ...(canManage
-            ? [new ButtonBuilder().setCustomId('panelgw_create').setLabel('Buat Giveaway').setEmoji('🎁').setStyle(ButtonStyle.Success)]
-            : [])
-        );
-        await interaction.reply({
-          embeds: [
-            new EmbedBuilder()
-              .setColor(PANEL_COLOR)
-              .setAuthor({ name: '🎁  Giveaway' })
-              .setDescription('Kelola giveaway di server ini.'),
-          ],
-          components: [row],
-          flags: MessageFlags.Ephemeral,
-        });
+        const embed = new EmbedBuilder()
+          .setColor(PANEL_COLOR)
+          .setAuthor({ name: '🎁  Giveaway' })
+          .setDescription('Kelola giveaway di server ini.');
+        await respondPanelScreen(interaction, embed, [buildGiveawaySubRow(canManage)]);
       } catch (err) {
         log(`[PANEL] Error tombol panel_giveaway: ${err?.stack || err}`);
       }
@@ -959,24 +1004,36 @@ client.on('interactionCreate', async (interaction) => {
 
     if (interaction.customId === 'panel_voicestats') {
       try {
-        await interaction.reply({
-          embeds: [
-            new EmbedBuilder()
-              .setColor(PANEL_COLOR)
-              .setAuthor({ name: '📊  Voice Stats' })
-              .setDescription('Mau tampilkan apa ke channel ini? Pilih dari dropdown di bawah.')
-              .setFooter({ text: 'Hasilnya bakal dikirim publik ke channel, bukan cuma buat kamu.' }),
-          ],
-          components: [buildVoiceStatsSelectRow()],
-          flags: MessageFlags.Ephemeral,
-        });
+        const embed = new EmbedBuilder()
+          .setColor(PANEL_COLOR)
+          .setAuthor({ name: '📊  Voice Stats' })
+          .setDescription('Mau tampilkan apa ke channel ini? Pilih dari dropdown di bawah.')
+          .setFooter({ text: 'Hasilnya bakal dikirim publik ke channel, bukan cuma buat kamu.' });
+        await respondPanelScreen(interaction, embed, [buildVoiceStatsSelectRow(), buildHomeOnlyRow()]);
       } catch (err) {
         log(`[PANEL] Error tombol panel_voicestats: ${err?.stack || err}`);
       }
       return;
     }
 
+    // Modal Discord nggak bisa nampilin tombol Home, jadi "Tanya AI" 2
+    // langkah: klik ini dulu nampilin mini-menu (dengan Home kelihatan),
+    // baru tombol "Buka Form" di mini-menu itu (panel_ask_open) yang
+    // munculin Modal-nya.
     if (interaction.customId === 'panel_ask') {
+      try {
+        const embed = new EmbedBuilder()
+          .setColor(PANEL_COLOR)
+          .setAuthor({ name: '🤖  Tanya AI' })
+          .setDescription('Klik **Buka Form** buat nulis pertanyaan kamu ke AI.');
+        await respondPanelScreen(interaction, embed, [buildAskRow()]);
+      } catch (err) {
+        log(`[PANEL] Error tombol panel_ask: ${err?.stack || err}`);
+      }
+      return;
+    }
+
+    if (interaction.customId === 'panel_ask_open') {
       try {
         const modal = new ModalBuilder().setCustomId('panel_ask_modal').setTitle('Tanya AI');
         const questionInput = new TextInputBuilder()
@@ -988,7 +1045,7 @@ client.on('interactionCreate', async (interaction) => {
         modal.addComponents(new ActionRowBuilder().addComponents(questionInput));
         await interaction.showModal(modal);
       } catch (err) {
-        log(`[PANEL] Error tombol panel_ask: ${err?.stack || err}`);
+        log(`[PANEL] Error tombol panel_ask_open: ${err?.stack || err}`);
       }
       return;
     }
@@ -996,7 +1053,7 @@ client.on('interactionCreate', async (interaction) => {
     if (interaction.customId === 'panel_help') {
       try {
         const embed = buildCommandsListEmbed(commands);
-        await interaction.reply({ embeds: [embed], flags: MessageFlags.Ephemeral });
+        await respondPanelScreen(interaction, embed, [buildHomeOnlyRow()]);
       } catch (err) {
         log(`[PANEL] Error tombol panel_help: ${err?.stack || err}`);
       }
@@ -1011,16 +1068,11 @@ client.on('interactionCreate', async (interaction) => {
     // ============================================================
     if (interaction.customId === 'panel_idcard') {
       try {
-        await interaction.reply({
-          embeds: [
-            new EmbedBuilder()
-              .setColor(PANEL_COLOR)
-              .setAuthor({ name: '🪪  ID Card Satpam Voice' })
-              .setDescription('Bikin kartu identitas kamu sendiri, atau lihat yang udah pernah dibuat.'),
-          ],
-          components: [buildIdCardSubRow()],
-          flags: MessageFlags.Ephemeral,
-        });
+        const embed = new EmbedBuilder()
+          .setColor(PANEL_COLOR)
+          .setAuthor({ name: '🪪  ID Card Satpam Voice' })
+          .setDescription('Bikin kartu identitas kamu sendiri, atau lihat yang udah pernah dibuat.');
+        await respondPanelScreen(interaction, embed, [buildIdCardSubRow()]);
       } catch (err) {
         log(`[PANEL] Error tombol panel_idcard: ${err?.stack || err}`);
       }
@@ -1029,11 +1081,7 @@ client.on('interactionCreate', async (interaction) => {
 
     if (interaction.customId === 'panel_tiktok') {
       try {
-        await interaction.reply({
-          embeds: [tiktokLive.buildTiktokInfoEmbed()],
-          components: [buildTiktokSubRow(tiktokLive.getStatus())],
-          flags: MessageFlags.Ephemeral,
-        });
+        await respondPanelScreen(interaction, tiktokLive.buildTiktokInfoEmbed(), [buildTiktokSubRow(tiktokLive.getStatus())]);
       } catch (err) {
         log(`[PANEL] Error tombol panel_tiktok: ${err?.stack || err}`);
       }
@@ -1152,16 +1200,11 @@ client.on('interactionCreate', async (interaction) => {
     // ============================================================
     if (interaction.customId === 'panel_streak') {
       try {
-        await interaction.reply({
-          embeds: [
-            new EmbedBuilder()
-              .setColor(PANEL_COLOR)
-              .setAuthor({ name: '🔥  Grup Streak Chat' })
-              .setDescription('Pilih salah satu di bawah ini.'),
-          ],
-          components: [buildStreakSubRow()],
-          flags: MessageFlags.Ephemeral,
-        });
+        const embed = new EmbedBuilder()
+          .setColor(PANEL_COLOR)
+          .setAuthor({ name: '🔥  Grup Streak Chat' })
+          .setDescription('Pilih salah satu di bawah ini.');
+        await respondPanelScreen(interaction, embed, [buildStreakSubRow()]);
       } catch (err) {
         log(`[PANEL] Error tombol panel_streak: ${err?.stack || err}`);
       }
