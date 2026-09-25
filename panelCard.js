@@ -130,11 +130,33 @@ function buildIdCardSubRow() {
   );
 }
 
+/**
+ * Baris tombol buat fitur TikTok LIVE, dipakai di balasan ephemeral pas
+ * tombol "TikTok" di panel utama diklik. "Matikan" cuma aktif/kelihatan
+ * berguna kalau fiturnya lagi nyala (disabled kalau belum ada yang di-set).
+ */
+function buildTiktokSubRow(status) {
+  return new ActionRowBuilder().addComponents(
+    new ButtonBuilder()
+      .setCustomId('panel_tiktok_setusername')
+      .setLabel(status?.enabled ? 'Ganti Username' : 'Set Username')
+      .setEmoji('📱')
+      .setStyle(ButtonStyle.Success),
+    new ButtonBuilder()
+      .setCustomId('panel_tiktok_disable')
+      .setLabel('Matikan')
+      .setEmoji('⛔')
+      .setStyle(ButtonStyle.Danger)
+      .setDisabled(!status?.enabled)
+  );
+}
+
 module.exports = {
   buildPanelCard,
   buildMusicSubRow,
   buildVoiceStatsSelectRow,
   buildStreakSubRow,
   buildIdCardSubRow,
+  buildTiktokSubRow,
   PANEL_COLOR,
 };
