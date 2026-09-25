@@ -32,6 +32,7 @@ const {
 const config = require('./config');
 const musicManager = require('./musicManager');
 const musicPlaylistStore = require('./musicPlaylistStore');
+const musicPlaylistCommands = require('./musicPlaylistCommands');
 const lyricsManager = require('./lyricsManager');
 const { buildNowPlayingCard, withNowPlayingLock } = require('./nowPlayingCard');
 const voiceActivity = require('./voiceActivity');
@@ -957,7 +958,7 @@ client.on('interactionCreate', async (interaction) => {
           .setColor(PANEL_COLOR)
           .setAuthor({ name: '🎵  Kontrol Musik' })
           .setDescription('Pilih aksi di bawah ini.');
-        await respondPanelScreen(interaction, embed, [buildMusicSubRow()]);
+        await respondPanelScreen(interaction, embed, buildMusicSubRow());
       } catch (err) {
         log(`[PANEL] Error tombol panel_music: ${err?.stack || err}`);
       }
@@ -1415,6 +1416,18 @@ client.on('interactionCreate', async (interaction) => {
         await handlePanelQueue(interaction);
       } catch (err) {
         log(`[PANEL] Error tombol panelmusic_queue: ${err?.stack || err}`);
+      }
+      return;
+    }
+
+    if (interaction.customId === 'panelmusic_playlist') {
+      try {
+        await interaction.reply({
+          embeds: [musicPlaylistCommands.buildPlaylistCommandsEmbed()],
+          flags: MessageFlags.Ephemeral,
+        });
+      } catch (err) {
+        log(`[PANEL] Error tombol panelmusic_playlist: ${err?.stack || err}`);
       }
       return;
     }
