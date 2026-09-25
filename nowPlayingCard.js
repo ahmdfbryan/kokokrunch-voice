@@ -1,5 +1,6 @@
 const { EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle } = require('discord.js');
 const musicManager = require('./musicManager');
+const botBranding = require('./botBranding');
 
 const COLOR = 0x5865f2;
 const LOOP_CYCLE = ['off', 'track', 'queue'];
@@ -76,9 +77,8 @@ function buildNowPlayingCard(guildId) {
       { name: '📜 Queue', value: `${queue.tracks.length} song${queue.tracks.length === 1 ? '' : 's'}`, inline: true },
       { name: `${volumeIcon} Volume`, value: `${volumePercent}%`, inline: true },
       { name: `${loopMeta.emoji} Loop`, value: loopMeta.fieldValue, inline: true }
-    )
-    .setFooter({ text: 'Satpam Voice • Music Player' })
-    .setTimestamp();
+    );
+  botBranding.applyBrandFooter(embed);
 
   // Judul jadi link ke video aslinya -- tapi cuma kalau url-nya beneran
   // valid http(s), biar nggak crash kalau ada data track yang nggak lengkap.
