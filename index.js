@@ -1842,19 +1842,40 @@ client.once('ready', () => {
   startHealthCheck();
   populateExistingVoiceSessions();
   giveawayManager.startScheduler(client);
-  // Fitur request musik dari live TikTok ("!request <judul>") -- otomatis
-  // nonaktif kalau TIKTOK_USERNAME nggak diisi di .env.
-  tiktokLive.init(config.tiktokUsername, async (query, requester) => {
-    if (!currentGuildId) {
-      log(`[TIKTOK] Request "${query}" dari @${requester} diabaikan, bot belum ready/connect ke voice channel.`);
-      return;
-    }
-    try {
-      const channel = await client.channels.fetch(config.voiceChannelId);
-      await handleTikTokRequest({ guildId: currentGuildId, channel, client, query, requester, log });
-    } catch (err) {
-      log(`[TIKTOK] Gagal proses request "${query}" dari @${requester}: ${err?.stack || err}`);
-    }
+  // Fitur command dari live TikTok ("!request <judul>", "!autoplay on/off")
+  // -- otomatis nonaktif kalau belum ada username yang di-set (lewat tombol
+  // TikTok di panel, atau TIKTOK_USERNAME di .env).
+  tiktokLive.init(config.tiktokUsername, {
+    onRequest: async (query, requester) => {
+      if (!currentGuildId) {
+        log(`[TIKTOK] Request "${query}" dari @${requester} diabaikan, bot belum ready/connect ke voice channel.`);
+        return;
+      }
+      try {
+        const channel = await client.channels.fetch(config.voiceChannelId);
+        await handleTikTokRequest({ guildId: currentGuildId, channel, client, query, requester, log });
+      } catch (err) {
+        log(`[TIKTOK] Gagal proses request "${query}" dari @${requester}: ${err?.stack || err}`);
+      }
+    },
+    onAutoplayToggle: async (enabled, requester) => {
+      if (!currentGuildId) {
+        log(`[TIKTOK] Toggle autoplay dari @${requester} diabaikan, bot belum ready/connect ke voice channel.`);
+        return;
+      }
+      try {
+        musicManager.setAutoplay(currentGuildId, enabled);
+        const channel = await client.channels.fetch(config.voiceChannelId);
+        await channel.send({
+          embeds: [textEmbed(`🔀 Autoplay di-**${enabled ? 'ON' : 'OFF'}**-in lewat TikTok LIVE oleh **${requester}**.`)],
+        });
+        // Card Now Playing yang lagi kebuka (kalau ada) ikut di-refresh biar
+        // tombol AutoPlay-nya nunjukkin state yang baru juga.
+        await refreshNowPlayingCard(currentGuildId);
+      } catch (err) {
+        log(`[TIKTOK] Gagal proses toggle autoplay dari @${requester}: ${err?.stack || err}`);
+      }
+    },
   });
   // Checkpoint berkala biar data voice activity nggak ilang banyak kalau
   // proses crash di tengah sesi panjang.
