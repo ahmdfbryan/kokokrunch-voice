@@ -24,6 +24,12 @@ module.exports = {
   // spesifik (misal gemini-2.5-flash) karena Google rutin nge-retire versi
   // lama (gemini-2.5-flash sendiri dijadwalkan shutdown Oktober 2026).
   geminiModel: process.env.GEMINI_MODEL || 'gemini-flash-latest',
+  // Opsional -- token gratis dari genius.com/api-clients, dipakai fitur
+  // "Lirik" di card Now Playing biar pencarian ke Genius (sumber lirik
+  // paling lengkap, termasuk lagu Indonesia) jauh lebih akurat & jarang
+  // gagal dibanding lewat endpoint publik Genius yang nggak resmi. Kalau
+  // dikosongin, fitur Lirik tetap jalan tapi coverage-nya lebih terbatas.
+  geniusAccessToken: process.env.GENIUS_ACCESS_TOKEN || null,
   // Jeda sebelum mencoba reconnect setelah terputus (ms)
   reconnectDelayMs: 5000,
   // Interval health check buat mastiin bot masih di voice channel (ms)
