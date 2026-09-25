@@ -9,77 +9,131 @@ const {
 const PANEL_COLOR = 0x3b82f6; // biru, senada sama warna ID Card & tema Satpam Voice
 
 /**
- * Panel utama: embed "premium" tapi SENGAJA nggak pakai field inline sama
- * sekali -- Discord di HP selalu nge-stack field `inline` jadi satu kolom
- * penuh (beda dari desktop yang bisa 2-3 kolom sejajar), jadi trik "grid"
- * pakai field malah bikin jarak/baris kosong aneh di HP. Solusinya: semua
- * konten taro di description biasa (cuma teks yang wrap), yang render-nya
- * PERSIS SAMA di HP maupun laptop -- itu yang bikin tampilannya konsisten
- * bagus di kedua platform.
- *
- * Tiap baris fitur sengaja dibikin PENDEK (di bawah ~30 karakter kata-kata
- * sesudah emoji) biar nggak ke-wrap ke baris ke-2 di layar HP yang sempit --
- * makanya deskripsinya singkat banget per fitur, bukan kalimat lengkap.
- * Ini yang bikin panelnya keliatan ringkas/modern padahal isinya sama
- * lengkapnya, dibanding versi lama yang tiap baris wrap jadi 2x lebih
- * panjang dari yang seharusnya.
- *
- * `botAvatarURL` opsional -- dipakai buat author icon, thumbnail & footer
- * icon biar kelihatan lebih "branded", tapi tetap aman kalau nggak disuplai.
+ * Format durasi uptime bot jadi teks singkat, misal "2 hari 5 jam 12 menit"
+ * atau "45 menit". Sengaja versi lokal sendiri (bukan pinjam dari
+ * voiceActivity.js) biar panelCard.js nggak nambah dependency baru cuma
+ * buat 1 fungsi kecil ini.
  */
-function buildPanelCard(botAvatarURL) {
-  const embed = new EmbedBuilder()
+function formatUptime(ms) {
+  const totalSeconds = Math.max(0, Math.floor((ms || 0) / 1000));
+  const totalMinutes = Math.floor(totalSeconds / 60);
+  const days = Math.floor(totalMinutes / (60 * 24));
+  const hours = Math.floor((totalMinutes % (60 * 24)) / 60);
+  const minutes = totalMinutes % 60;
+
+  const parts = [];
+  if (days > 0) parts.push(`${days} hari`);
+  if (hours > 0) parts.push(`${hours} jam`);
+  if (minutes > 0 || parts.length === 0) parts.push(`${minutes} menit`);
+  return parts.join(' ');
+}
+
+/**
+ * Tombol "Home" -- dipakai di HAMPIR SEMUA layar panel (kecuali beberapa
+ * balasan singkat/leaf) biar user selalu bisa balik ke Panel Utama dari
+ * mana aja, dalam 1 embed/pesan yang sama (lihat index.js: respondPanelScreen).
+ * Di layar Home sendiri tombolnya di-disable karena emang lagi di situ.
+ */
+function buildHomeButton({ disabled = false } = {}) {
+  return new ButtonBuilder().setCustomId('panel_home').setLabel('Home').setEmoji('🏠').setStyle(ButtonStyle.Primary).setDisabled(disabled);
+}
+
+/** Row isi 1 tombol Home doang -- dipakai di layar-layar yang cuma butuh itu (Bantuan, Voice Stats, dll). */
+function buildHomeOnlyRow() {
+  return new ActionRowBuilder().addComponents(buildHomeButton());
+}
+
+/**
+ * Layar PANEL UTAMA (Home): embed "premium" tapi SENGAJA nggak pakai field
+ * inline sama sekali -- Discord di HP selalu nge-stack field `inline` jadi
+ * satu kolom penuh (beda dari desktop yang bisa 2-3 kolom sejajar), jadi
+ * trik "grid" pakai field malah bikin jarak/baris kosong aneh di HP.
+ * Solusinya: semua konten taro di description biasa (cuma teks yang wrap),
+ * yang render-nya PERSIS SAMA di HP maupun laptop.
+ *
+ * Bagian Stats (Jumlah Command, Uptime, Ping, Status, Made by) dirender
+ * pakai blockquote (`> `) biar keliatan kayak "kartu info" terpisah dari
+ * deskripsi bot di atasnya.
+ *
+ * `client` dipakai buat ambil avatar bot, uptime (client.uptime) & ping
+ * (client.ws.ping). `commandCount` jumlah total command yang kedaftar.
+ */
+function buildHomeEmbed(client, commandCount) {
+  const botAvatarURL = client?.user?.displayAvatarURL?.({ size: 256 }) || null;
+  const pingMs = Math.max(0, Math.round(client?.ws?.ping || 0));
+  const uptimeText = formatUptime(client?.uptime);
+
+  return new EmbedBuilder()
     .setColor(PANEL_COLOR)
-    .setAuthor({ name: 'SATPAM PANEL', iconURL: botAvatarURL || undefined })
+    .setAuthor({ name: 'SATPAM VOICE — Panel Utama', iconURL: botAvatarURL || undefined })
     .setDescription(
       [
-        'Akses semua fitur bot **Satpam Voice** cukup dari panel ini.',
+        '**Akses semua fitur bot Satpam Voice cukup dari panel ini.**',
         '',
-        '🎵 **Musik** — Play • Skip • Stop',
-        '🎁 **Giveaway** — Buat & pantau',
-        '🔥 **Streak** — Grup chat harian',
-        '🤖 **Tanya AI** — Ngobrol sama AI',
-        '🪪 **ID Card** — Kartu identitas',
-        '📱 **TikTok** — Request lagu live',
-        '📊 **Voice Stats** — Aktivitas kamu',
-        'ℹ️ **Info/Help** — Semua command',
+        '**📊 Stats**',
+        `> **Jumlah Command:** ${commandCount ?? 0}`,
+        `> **Uptime:** ${uptimeText}`,
+        `> **Ping:** ${pingMs}ms`,
+        '> **Status Bot:** 🟢 Online',
+        '> **Made by** `Satpam Voice`',
       ].join('\n')
     )
     .setThumbnail(botAvatarURL || null)
     .setFooter({ text: 'Satpam Voice', iconURL: botAvatarURL || undefined })
     .setTimestamp();
+}
 
-  // Discord bakal WRAP tombol dalam 1 row ke baris baru kalau total lebar
-  // labelnya kepanjangan buat layar (kejadian di row isi 4 tombol -- tombol
-  // ke-4 "Voice Stats" jadi kepental sendirian ke baris berikutnya). Biar
-  // rapi & konsisten di semua ukuran layar, tiap row dibatasin maks 3
-  // tombol aja (bukan 5), dan Credit sengaja berdiri sendiri di row
-  // terakhir (bukan numpang di row lain) biar bukan wrap yang nggak
-  // disengaja.
-  const row1 = new ActionRowBuilder().addComponents(
+/**
+ * Tombol-tombol di layar Home: Home (disabled, lagi di sini), Featured
+ * (buka daftar fitur), Musik & Bantuan (akses cepat), dan CC (link, bukan
+ * bagian dari sistem navigasi 1-embed).
+ */
+function buildHomeButtons() {
+  const row = new ActionRowBuilder().addComponents(
+    buildHomeButton({ disabled: true }),
+    new ButtonBuilder().setCustomId('panel_featured').setLabel('Featured').setEmoji('✨').setStyle(ButtonStyle.Success),
     new ButtonBuilder().setCustomId('panel_music').setLabel('Musik').setEmoji('🎵').setStyle(ButtonStyle.Primary),
-    new ButtonBuilder().setCustomId('panel_giveaway').setLabel('Giveaway').setEmoji('🎁').setStyle(ButtonStyle.Success),
-    new ButtonBuilder().setCustomId('panel_streak').setLabel('Streak').setEmoji('🔥').setStyle(ButtonStyle.Danger)
-  );
-  // Warna tombol disesuaikan sama TEMA masing-masing fitur (bukan
-  // disamain semua), sama kayak Streak=merah (fire) & Musik=biru:
-  // Voice Stats abu-abu netral (statistik/data, sama kayak Info/Help),
-  // ID Card biru (nyocokin sama warna aksen di gambar ID Card-nya sendiri).
-  const row2 = new ActionRowBuilder().addComponents(
-    new ButtonBuilder().setCustomId('panel_ask').setLabel('Tanya AI').setEmoji('🤖').setStyle(ButtonStyle.Primary),
-    new ButtonBuilder().setCustomId('panel_idcard').setLabel('ID Card').setEmoji('🪪').setStyle(ButtonStyle.Primary),
-    // Tombol info/status doang (bukan ngubah state apa-apa), jadi abu-abu netral.
-    new ButtonBuilder().setCustomId('panel_tiktok').setLabel('TikTok').setEmoji('📱').setStyle(ButtonStyle.Secondary)
-  );
-  const row3 = new ActionRowBuilder().addComponents(
-    new ButtonBuilder().setCustomId('panel_voicestats').setLabel('Voice Stats').setEmoji('📊').setStyle(ButtonStyle.Secondary),
-    new ButtonBuilder().setCustomId('panel_help').setLabel('Info/Help').setEmoji('ℹ️').setStyle(ButtonStyle.Secondary),
+    new ButtonBuilder().setCustomId('panel_help').setLabel('Bantuan').setEmoji('ℹ️').setStyle(ButtonStyle.Secondary),
     // Tombol Link (bukan customId) -- diklik langsung buka profil Discord
     // pembuat bot, nggak lewat interactionCreate sama sekali.
     new ButtonBuilder().setLabel('CC').setEmoji('👤').setStyle(ButtonStyle.Link).setURL('https://discord.com/users/1141222257604182020')
   );
+  return [row];
+}
 
-  return { embed, components: [row1, row2, row3] };
+/**
+ * Entry point lama yang masih dipakai buat ngirim/reposisi panel sticky
+ * (lihat index.js `repositionChannelStack`) -- sekarang isinya SELALU
+ * state Home (Panel Utama), karena mulai dari sini semua navigasi ke
+ * fitur lain terjadi di 1 pesan ephemeral yang sama (lihat panel_home /
+ * panel_featured / respondPanelScreen di index.js), bukan lewat panel
+ * publik yang sticky ini.
+ */
+function buildPanelCard(client, commandCount) {
+  return { embed: buildHomeEmbed(client, commandCount), components: buildHomeButtons() };
+}
+
+/** Layar "Featured": daftar semua fitur bot + tombol Home buat balik. */
+function buildFeaturedEmbed() {
+  return new EmbedBuilder()
+    .setColor(PANEL_COLOR)
+    .setAuthor({ name: '✨  Fitur Bot' })
+    .setDescription('Pilih fitur yang mau kamu pakai di bawah ini.');
+}
+
+function buildFeaturedButtons() {
+  const row1 = new ActionRowBuilder().addComponents(
+    new ButtonBuilder().setCustomId('panel_giveaway').setLabel('Giveaway').setEmoji('🎁').setStyle(ButtonStyle.Success),
+    new ButtonBuilder().setCustomId('panel_streak').setLabel('Streak').setEmoji('🔥').setStyle(ButtonStyle.Danger),
+    new ButtonBuilder().setCustomId('panel_ask').setLabel('Tanya AI').setEmoji('🤖').setStyle(ButtonStyle.Primary),
+    new ButtonBuilder().setCustomId('panel_idcard').setLabel('ID Card').setEmoji('🪪').setStyle(ButtonStyle.Primary),
+    new ButtonBuilder().setCustomId('panel_tiktok').setLabel('TikTok').setEmoji('📱').setStyle(ButtonStyle.Secondary)
+  );
+  const row2 = new ActionRowBuilder().addComponents(
+    new ButtonBuilder().setCustomId('panel_voicestats').setLabel('Voice Stats').setEmoji('📊').setStyle(ButtonStyle.Secondary),
+    buildHomeButton()
+  );
+  return [row1, row2];
 }
 
 /**
@@ -91,7 +145,8 @@ function buildMusicSubRow() {
     new ButtonBuilder().setCustomId('panelmusic_play').setLabel('Play').setEmoji('▶️').setStyle(ButtonStyle.Success),
     new ButtonBuilder().setCustomId('panelmusic_skip').setLabel('Skip').setEmoji('⏭️').setStyle(ButtonStyle.Primary),
     new ButtonBuilder().setCustomId('panelmusic_stop').setLabel('Stop').setEmoji('⏹️').setStyle(ButtonStyle.Danger),
-    new ButtonBuilder().setCustomId('panelmusic_queue').setLabel('Queue').setEmoji('📜').setStyle(ButtonStyle.Secondary)
+    new ButtonBuilder().setCustomId('panelmusic_queue').setLabel('Queue').setEmoji('📜').setStyle(ButtonStyle.Secondary),
+    buildHomeButton()
   );
 }
 
@@ -122,18 +177,20 @@ function buildStreakSubRow() {
     new ButtonBuilder().setCustomId('panelstreak_info').setLabel('Info Streak').setEmoji('🔥').setStyle(ButtonStyle.Danger),
     new ButtonBuilder().setCustomId('panelstreak_create').setLabel('Buat Grup').setEmoji('➕').setStyle(ButtonStyle.Success),
     new ButtonBuilder().setCustomId('panelstreak_mygroup').setLabel('Grup Saya').setEmoji('👥').setStyle(ButtonStyle.Secondary),
-    new ButtonBuilder().setCustomId('panelstreak_leaderboard').setLabel('Leaderboard').setEmoji('🏆').setStyle(ButtonStyle.Secondary)
+    new ButtonBuilder().setCustomId('panelstreak_leaderboard').setLabel('Leaderboard').setEmoji('🏆').setStyle(ButtonStyle.Secondary),
+    buildHomeButton()
   );
 }
 
 /**
- * Baris 2 tombol pilihan buat fitur ID Card, dipakai di balasan ephemeral
+ * Baris 3 tombol pilihan buat fitur ID Card, dipakai di balasan ephemeral
  * pas tombol "ID Card" di panel utama diklik.
  */
 function buildIdCardSubRow() {
   return new ActionRowBuilder().addComponents(
     new ButtonBuilder().setCustomId('panelid_create').setLabel('Buat ID').setEmoji('🆕').setStyle(ButtonStyle.Success),
-    new ButtonBuilder().setCustomId('panelid_view').setLabel('Lihat ID Saya').setEmoji('🪪').setStyle(ButtonStyle.Secondary)
+    new ButtonBuilder().setCustomId('panelid_view').setLabel('Lihat ID Saya').setEmoji('🪪').setStyle(ButtonStyle.Secondary),
+    buildHomeButton()
   );
 }
 
@@ -154,16 +211,53 @@ function buildTiktokSubRow(status) {
       .setLabel('Matikan')
       .setEmoji('⛔')
       .setStyle(ButtonStyle.Danger)
-      .setDisabled(!status?.enabled)
+      .setDisabled(!status?.enabled),
+    buildHomeButton()
+  );
+}
+
+/**
+ * Baris tombol pilihan buat fitur Giveaway, dipakai di balasan ephemeral
+ * pas tombol "Giveaway" di panel utama diklik. "Buat Giveaway" cuma
+ * dimunculin kalau clicker punya izin Manage Server.
+ */
+function buildGiveawaySubRow(canManage) {
+  return new ActionRowBuilder().addComponents(
+    new ButtonBuilder().setCustomId('panelgw_list').setLabel('Lihat Aktif').setEmoji('📋').setStyle(ButtonStyle.Secondary),
+    ...(canManage
+      ? [new ButtonBuilder().setCustomId('panelgw_create').setLabel('Buat Giveaway').setEmoji('🎁').setStyle(ButtonStyle.Success)]
+      : []),
+    buildHomeButton()
+  );
+}
+
+/**
+ * Baris tombol buat fitur Tanya AI. Modal Discord nggak bisa nampilin
+ * tombol Home di dalamnya, jadi alurnya 2 langkah: tombol "Tanya AI" di
+ * panel dulu nampilin layar mini-menu ini (dengan tombol Home kelihatan),
+ * baru klik "Buka Form" yang munculin Modal-nya.
+ */
+function buildAskRow() {
+  return new ActionRowBuilder().addComponents(
+    new ButtonBuilder().setCustomId('panel_ask_open').setLabel('Buka Form').setEmoji('📝').setStyle(ButtonStyle.Primary),
+    buildHomeButton()
   );
 }
 
 module.exports = {
   buildPanelCard,
+  buildHomeEmbed,
+  buildHomeButtons,
+  buildHomeButton,
+  buildHomeOnlyRow,
+  buildFeaturedEmbed,
+  buildFeaturedButtons,
   buildMusicSubRow,
   buildVoiceStatsSelectRow,
   buildStreakSubRow,
   buildIdCardSubRow,
   buildTiktokSubRow,
+  buildGiveawaySubRow,
+  buildAskRow,
   PANEL_COLOR,
 };
