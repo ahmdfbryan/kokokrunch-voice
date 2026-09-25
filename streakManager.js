@@ -6,6 +6,7 @@
 
 const { EmbedBuilder } = require('discord.js');
 const streakStore = require('./streakStore');
+const botBranding = require('./botBranding');
 
 const MIN_MEMBERS_TO_START = 3;
 const REQUIRED_CHECKINS = 2;
@@ -119,7 +120,7 @@ function tickAllGroups() {
  * pas tombol "Streak" di sub-menu panel diklik.
  */
 function buildStreakInfoEmbed() {
-  return new EmbedBuilder()
+  const embed = new EmbedBuilder()
     .setColor(STREAK_COLOR)
     .setTitle('🔥 Grup Streak Chat')
     .setDescription(
@@ -136,9 +137,8 @@ function buildStreakInfoEmbed() {
         '• Kalau belum nyala pas window besok muncul, streak grup balik ke 0.',
         '• Cek ranking semua grup lewat tombol **Leaderboard**.',
       ].join('\n')
-    )
-    .setFooter({ text: 'KokoKrunch Studios' })
-    .setTimestamp();
+    );
+  return botBranding.applyBrandFooter(embed);
 }
 
 /**
@@ -205,11 +205,11 @@ function buildStreakLeaderboardEmbed(guildId) {
     ].join('\n');
   });
 
-  return new EmbedBuilder()
+  const embed = new EmbedBuilder()
     .setColor(STREAK_COLOR)
     .setTitle('🏆 Leaderboard Streak')
-    .setDescription(blocks.join('\n\n'))
-    .setFooter({ text: 'KokoKrunch Studios' });
+    .setDescription(blocks.join('\n\n'));
+  return botBranding.applyBrandFooter(embed);
 }
 
 module.exports = {
