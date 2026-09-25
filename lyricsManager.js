@@ -38,21 +38,26 @@ function setLogger(fn) {
   if (typeof fn === 'function') log = fn;
 }
 
+// Kata kunci "junk" yang biasa nampang di DALAM tanda kurung/kurung siku di
+// judul video musik. Sengaja dibikin 1 pattern yang nyari kurung/kurung
+// siku yang ISINYA MENGANDUNG salah satu kata ini, terus buang SELURUH isi
+// kurungnya sekaligus (bukan cuma kata per kata) -- soalnya cara lama
+// (nyocokin frasa persis kayak "official video" / "official audio" satu-
+// satu) suka nyisain "sampah" kalau kombinasi katanya beda dari yang
+// diduga, misal "(Official Lyric Video)" cuma kena buang "Lyric Video"-nya
+// doang dan nyisain "(Official )" yang bikin query pencarian jadi kotor.
+const BRACKET_JUNK_KEYWORDS =
+  'official|lyrics?|lyric\\s*video|video|audio|hd|4k|8k|mv|remaster\\w*|visualizer|clip|explicit|clean|full\\s*version|extended|reupload';
 const JUNK_PATTERNS = [
-  /\((?:official\s*)?(?:music\s*)?video\)/gi,
-  /\[(?:official\s*)?(?:music\s*)?video\]/gi,
-  /\(official\s*audio\)/gi,
-  /\[official\s*audio\]/gi,
-  /\((?:lyrics?|lyric\s*video)\)/gi,
-  /\[(?:lyrics?|lyric\s*video)\]/gi,
-  /\[\s*(?:hd|4k|mv)\s*\]/gi,
-  /\(\s*(?:hd|4k|mv)\s*\)/gi,
-  /\b(?:hd|4k)\b/gi,
+  new RegExp(`\\([^)]*\\b(?:${BRACKET_JUNK_KEYWORDS})\\b[^)]*\\)`, 'gi'),
+  new RegExp(`\\[[^\\]]*\\b(?:${BRACKET_JUNK_KEYWORDS})\\b[^\\]]*\\]`, 'gi'),
+  // Jaring pengaman kalau ada frasa junk yang nggak di dalam kurung sama
+  // sekali (jarang, tapi ada beberapa channel yang nulis gitu).
   /\bofficial\s+(?:music\s+)?video\b/gi,
   /\bofficial\s+audio\b/gi,
   /\blyrics?\s+video\b/gi,
   /\blyrics?\b/gi,
-  /\(.*?remaster\w*.*?\)/gi,
+  /\b(?:hd|4k|8k)\b/gi,
   /\bfeat\.?\s.+$/gi,
   /\bft\.?\s.+$/gi,
 ];
@@ -67,6 +72,12 @@ function withTimeout(promise, ms, label) {
 
 function cleanTitle(rawTitle) {
   let cleaned = rawTitle || '';
+  // Banyak channel musik nulis judul format "Artis - Judul | Nama Album/
+  // Extra Info (Official Video)" -- bagian SETELAH tanda "|" pertama
+  // hampir selalu bukan bagian judul lagu asli, jadi dibuang aja semua
+  // (baik itu emang cuma keterangan tambahan, ATAU sekalian ngebuang
+  // embel-embel "(Official ...)" yang letaknya di situ).
+  cleaned = cleaned.split('|')[0];
   for (const pattern of JUNK_PATTERNS) cleaned = cleaned.replace(pattern, ' ');
   return cleaned.replace(/\s+/g, ' ').trim();
 }
@@ -345,7 +356,14 @@ async function getLyrics(rawTitle) {
   }
 
   const exactCandidates = [...dashCandidates, ...(itunesCandidate ? [itunesCandidate] : [])];
-  const geniusQueries = [cleaned, ...(itunesCandidate ? [`${itunesCandidate.artist} ${itunesCandidate.track}`] : [])];
+  // Query "Artis Judul" polos (dari dash-split) dicoba DULUAN -- lebih
+  // bersih & presisi buat mesin pencari Genius dibanding judul lengkap yang
+  // masih ada tanda "-"-nya atau sisa kata yang belum sempat kebersihin.
+  const geniusQueries = [
+    ...dashCandidates.slice(0, 1).map((c) => `${c.artist} ${c.track}`),
+    cleaned,
+    ...(itunesCandidate ? [`${itunesCandidate.artist} ${itunesCandidate.track}`] : []),
+  ];
 
   const sources = [
     { name: 'LRCLIB', run: () => fetchFromLrclib(cleaned, dashArtistHint, exactCandidates) },
