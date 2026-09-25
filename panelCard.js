@@ -17,6 +17,13 @@ const PANEL_COLOR = 0x3b82f6; // biru, senada sama warna ID Card & tema Satpam V
  * PERSIS SAMA di HP maupun laptop -- itu yang bikin tampilannya konsisten
  * bagus di kedua platform.
  *
+ * Tiap baris fitur sengaja dibikin PENDEK (di bawah ~30 karakter kata-kata
+ * sesudah emoji) biar nggak ke-wrap ke baris ke-2 di layar HP yang sempit --
+ * makanya deskripsinya singkat banget per fitur, bukan kalimat lengkap.
+ * Ini yang bikin panelnya keliatan ringkas/modern padahal isinya sama
+ * lengkapnya, dibanding versi lama yang tiap baris wrap jadi 2x lebih
+ * panjang dari yang seharusnya.
+ *
  * `botAvatarURL` opsional -- dipakai buat author icon, thumbnail & footer
  * icon biar kelihatan lebih "branded", tapi tetap aman kalau nggak disuplai.
  */
@@ -26,16 +33,15 @@ function buildPanelCard(botAvatarURL) {
     .setAuthor({ name: 'SATPAM PANEL', iconURL: botAvatarURL || undefined })
     .setDescription(
       [
-        'Akses semua fitur bot Satpam Voice cukup dari panel ini.',
-        '',
-        '🎵 **Musik** — Play • Skip • Stop • Queue',
-        '🎁 **Giveaway** — Buat & pantau giveaway',
-        '🔥 **Streak** — Bikin/kelola grup Daily Streak Chat',
-        '📊 **Voice Stats** — Statistik & leaderboard',
-        '🤖 **Tanya AI** — Tanya apa aja ke AI bot',
-        'ℹ️ **Info / Help** — Daftar semua command',
-        '🪪 **ID Card** — Buat & lihat kartu identitas Satpam Voice kamu',
-        '📱 **TikTok** — Request lagu langsung dari live TikTok',
+        'Semua fitur dalam satu panel ✨',
+        '🎵 **Musik** — Play • Skip • Stop',
+        '🎁 **Giveaway** — Buat & pantau',
+        '🔥 **Streak** — Grup chat harian',
+        '📊 **Voice Stats** — Aktivitas kamu',
+        '🤖 **Tanya AI** — Ngobrol sama AI',
+        'ℹ️ **Info/Help** — Semua command',
+        '🪪 **ID Card** — Kartu identitas',
+        '📱 **TikTok** — Request lagu live',
       ].join('\n')
     )
     .setThumbnail(botAvatarURL || null)
