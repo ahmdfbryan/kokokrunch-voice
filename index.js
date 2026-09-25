@@ -480,38 +480,14 @@ function buildVoiceStatsEmbed(user) {
 // yang sama dipakai /voiceleaderboard DAN dropdown leaderboard di panel).
 
 // ============================================================
-// NAVIGASI PANEL (1 embed yang sama): panel publik yang sticky (dikirim
-// via /panel) TIDAK pernah diubah langsung -- itu tetap nampilin Panel
-// Utama buat semua orang (pesannya sendiri BUKAN ephemeral). Begitu ada
-// yang klik tombol navigasi apapun di panel publik itu, bot bikin SATU
-// balasan ephemeral baru (cuma keliatan buat yang klik). Dari situ,
-// navigasi selanjutnya (Home, Featured, pindah antar fitur) meng-update
-// PESAN EPHEMERAL itu-itu aja lewat interaction.update() -- makanya
-// kerasa "1 embed yang sama" biarpun user muter-muter ke banyak layar.
-//
-// Deteksinya gampang: cek apakah pesan yang tombolnya diklik itu ephemeral
-// atau bukan. Pesan publik (panel sticky) -> reply() (bikin sesi ephemeral
-// baru). Pesan ephemeral (sesi navigasi milik user itu sendiri) -> update()
-// di tempat.
-function isEphemeralSession(interaction) {
-  try {
-    return !!(
-      interaction.message &&
-      interaction.message.flags &&
-      typeof interaction.message.flags.has === 'function' &&
-      interaction.message.flags.has(MessageFlags.Ephemeral)
-    );
-  } catch {
-    return false;
-  }
-}
-
+// NAVIGASI PANEL (1 embed yang sama): panel bot (dikirim via /panel) SELALU
+// cuma 1 pesan/embed -- nggak ada balasan ephemeral terpisah buat navigasi.
+// Klik tombol apapun (Home, Featured, Musik, dst) langsung meng-update
+// PESAN PANEL ITU SENDIRI lewat interaction.update(), jadi embed-nya
+// "berubah wujud" jadi layar fitur yang dipilih, dan tombol Home di layar
+// manapun cukup balikin lagi jadi embed Panel Utama.
 async function respondPanelScreen(interaction, embed, components) {
-  if (isEphemeralSession(interaction)) {
-    await interaction.update({ embeds: [embed], components });
-  } else {
-    await interaction.reply({ embeds: [embed], components, flags: MessageFlags.Ephemeral });
-  }
+  await interaction.update({ embeds: [embed], components });
 }
 
 async function handlePanelQueue(interaction) {
@@ -950,11 +926,11 @@ client.on('interactionCreate', async (interaction) => {
     }
 
     // ============================================================
-    // PANEL: semua tombol dari panel utama & sub-menunya. Klik pertama dari
-    // panel publik yang sticky selalu bikin sesi ephemeral BARU (biar panel
-    // publiknya sendiri nggak berubah buat orang lain); klik-klik
-    // berikutnya (Home, Featured, pindah fitur) UPDATE pesan ephemeral itu
-    // di tempat, jadi kerasa "1 embed yang sama" -- lihat respondPanelScreen.
+    // PANEL: semua tombol dari panel utama & sub-menunya. Semua navigasi
+    // (Home, Featured, pindah fitur) UPDATE pesan panel itu sendiri di
+    // tempat lewat respondPanelScreen -- cuma 1 embed/pesan, nggak pernah
+    // spawn balasan baru. Klik "Home" pas lagi DI Home sendiri cuma
+    // ngerender ulang layar yang sama (kerasa kayak nggak ada aksi apa-apa).
     // ============================================================
     if (interaction.customId === 'panel_home') {
       try {
