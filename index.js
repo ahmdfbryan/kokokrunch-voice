@@ -357,6 +357,10 @@ async function cleanupOldNowPlayingCard(guildId) {
 function log(msg) {
   console.log(`[${new Date().toISOString()}] ${msg}`);
 }
+// Biar log internal fitur Lirik (sumber mana yang dicoba, kenapa gagal/
+// ditolak) nyampur di pm2 logs yang sama, bukan console.log polos --
+// gampang buat nge-debug kalau ada laporan "lirik nggak ketemu"/"salah lagu".
+lyricsManager.setLogger(log);
 
 // ============================================================
 // PANEL: skip/stop lewat tombol panel -- logikanya sama persis kayak
