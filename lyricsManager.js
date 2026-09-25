@@ -1,20 +1,33 @@
 // Fitur "Lirik" di card Now Playing -- ambil lirik lagu yang lagi diputar
 // berdasarkan judul track. Judul video YouTube biasanya berantakan (ada
 // "(Official Video)", "[Lyrics]", "ft.", dll dan artis+judul digabung jadi
-// 1 string), jadi alurnya:
-//   1) Bersihin judul dari embel-embel non-musik.
-//   2) Normalisasi ke pasangan artist+track yang bener lewat iTunes Search
-//      API (gratis, tanpa API key) -- ini paling akurat soalnya database
-//      metadata musiknya resmi.
-//   3) Ambil teks liriknya dari lyrics.ovh (gratis, tanpa API key) pakai
-//      artist+track hasil normalisasi. Kalau nggak ketemu, fallback coba
-//      pecah manual dari tanda "-" di judul (2 urutan: "A - B" & "B - A").
+// 1 string).
+//
+// Coverage 1 sumber lirik doang (lyrics.ovh) ternyata kecil banget -- sering
+// "nggak ketemu" padahal lagunya populer, apalagi lagu Indonesia. Makanya di
+// sini dipasang 3 SUMBER berurutan (coba 1, kalau gagal/nggak ketemu baru
+// lanjut ke berikutnya), biar peluang liriknya ketemu jauh lebih besar buat
+// hampir semua lagu:
+//   1) LRCLIB      -- API lirik gratis (nggak perlu API key), database-nya
+//                      dikumpulin dari banyak sumber & lumayan lengkap buat
+//                      lagu lokal maupun barat.
+//   2) Genius       -- database lirik TERBESAR & paling lengkap (termasuk
+//                      lagu Indonesia/dangdut/religi dll), tapi Genius nggak
+//                      nyediain API lirik publik resmi, jadi di sini dicari
+//                      lewat endpoint search bawaan situsnya lalu halaman
+//                      liriknya di-"scrape" (ambil teks dari HTML-nya).
+//   3) lyrics.ovh   -- fallback terakhir, database lebih kecil tapi cepet &
+//                      simpel, jaga-jaga kalau 2 sumber di atas lagi down.
 
 const fetch = require('node-fetch');
+const cheerio = require('cheerio');
 const { EmbedBuilder } = require('discord.js');
 
 const LYRICS_COLOR = 0x5865f2; // biru, senada tema fitur Musik
 const MAX_DESC_LENGTH = 3900; // batas aman embed description (limit Discord 4096)
+// Genius nolak/curigain request tanpa User-Agent yang kayak browser beneran.
+const BROWSER_USER_AGENT =
+  'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36';
 
 const JUNK_PATTERNS = [
   /\((?:official\s*)?(?:music\s*)?video\)/gi,
@@ -51,7 +64,8 @@ function cleanTitle(rawTitle) {
 
 /**
  * Cari metadata lagu resmi (artist + track) yang paling cocok dari judul
- * yang udah dibersihin, pakai iTunes Search API.
+ * yang udah dibersihin, pakai iTunes Search API (gratis, tanpa API key).
+ * Dipakai buat query yang lebih presisi ke sumber lirik lain di bawah.
  */
 async function lookupItunes(query) {
   const url = `https://itunes.apple.com/search?media=music&entity=song&limit=1&term=${encodeURIComponent(query)}`;
@@ -63,47 +77,142 @@ async function lookupItunes(query) {
   return { artist: hit.artistName, track: hit.trackName };
 }
 
-async function fetchLyricsOvh(artist, track) {
-  const url = `https://api.lyrics.ovh/v1/${encodeURIComponent(artist)}/${encodeURIComponent(track)}`;
-  const res = await withTimeout(fetch(url), 8000, 'Lyrics.ovh');
-  if (res.status === 404) return null;
-  if (!res.ok) throw new Error(`Lyrics.ovh error ${res.status}`);
-  const data = await res.json();
-  return data?.lyrics ? data.lyrics.trim() : null;
+/**
+ * SUMBER 1: LRCLIB. Coba `/api/get` (presisi, butuh artist+track terpisah)
+ * dulu kalau ada hasil normalisasi iTunes, baru fallback ke `/api/search`
+ * (full-text, cukup 1 string bebas) pakai judul yang udah dibersihin.
+ */
+async function fetchFromLrclib(cleanedTitle, normalized) {
+  if (normalized) {
+    try {
+      const url = `https://lrclib.net/api/get?artist_name=${encodeURIComponent(normalized.artist)}&track_name=${encodeURIComponent(normalized.track)}`;
+      const res = await withTimeout(fetch(url), 8000, 'LRCLIB');
+      if (res.ok) {
+        const data = await res.json();
+        const lyrics = (data?.plainLyrics || '').trim();
+        if (lyrics) return { lyrics, artist: data.artistName || normalized.artist, track: data.trackName || normalized.track };
+      }
+    } catch {
+      // lanjut ke pencarian full-text di bawah
+    }
+  }
+
+  const url = `https://lrclib.net/api/search?q=${encodeURIComponent(cleanedTitle)}`;
+  const res = await withTimeout(fetch(url), 8000, 'LRCLIB');
+  if (!res.ok) throw new Error(`LRCLIB error ${res.status}`);
+  const results = await res.json();
+  const hit = Array.isArray(results) ? results.find((r) => (r.plainLyrics || '').trim()) : null;
+  if (!hit) return null;
+  return { lyrics: hit.plainLyrics.trim(), artist: hit.artistName, track: hit.trackName };
 }
 
 /**
- * Entry point utama: terima judul track mentah (biasanya judul video
- * YouTube), balikin `{ ok:true, lyrics, artist, track }` atau
- * `{ ok:false, reason }`.
+ * SUMBER 2: Genius (via scraping). Genius nggak punya API lirik publik
+ * resmi, tapi endpoint search bawaan situsnya (`/api/search/multi`) bisa
+ * diakses tanpa API key, dan halaman lagunya nampilin lirik lengkap di
+ * elemen `[data-lyrics-container="true"]` yang tinggal diambil teksnya.
  */
-async function getLyrics(rawTitle) {
-  const cleaned = cleanTitle(rawTitle);
-  if (!cleaned) return { ok: false, reason: 'empty_title' };
+async function searchGeniusSongUrl(query) {
+  const url = `https://genius.com/api/search/multi?q=${encodeURIComponent(query)}`;
+  const res = await withTimeout(
+    fetch(url, { headers: { 'User-Agent': BROWSER_USER_AGENT, Accept: 'application/json' } }),
+    8000,
+    'Genius Search'
+  );
+  if (!res.ok) throw new Error(`Genius search error ${res.status}`);
+  const data = await res.json();
+  const sections = data?.response?.sections || [];
+  const songSection = sections.find((s) => s.type === 'song');
+  const hit = songSection?.hits?.[0]?.result;
+  if (!hit?.url) return null;
+  return { pageUrl: hit.url, artist: hit.primary_artist?.name, track: hit.title };
+}
 
+async function scrapeGeniusLyrics(pageUrl) {
+  const res = await withTimeout(
+    fetch(pageUrl, { headers: { 'User-Agent': BROWSER_USER_AGENT } }),
+    10000,
+    'Genius Page'
+  );
+  if (!res.ok) throw new Error(`Genius page error ${res.status}`);
+  const html = await res.text();
+  const $ = cheerio.load(html);
+
+  const blocks = [];
+  $('div[data-lyrics-container="true"]').each((_, el) => {
+    // Ganti <br> jadi newline SEBELUM ambil teks, biar barisnya nggak
+    // ke-gabung jadi 1 baris panjang pas .text() dipanggil.
+    $(el).find('br').replaceWith('\n');
+    blocks.push($(el).text());
+  });
+
+  return blocks.join('\n').replace(/\n{3,}/g, '\n\n').trim();
+}
+
+async function fetchFromGenius(query) {
+  const found = await searchGeniusSongUrl(query);
+  if (!found) return null;
+  const lyrics = await scrapeGeniusLyrics(found.pageUrl);
+  if (!lyrics) return null;
+  return { lyrics, artist: found.artist, track: found.track };
+}
+
+/**
+ * SUMBER 3 (fallback terakhir): lyrics.ovh. Butuh artist+track terpisah,
+ * jadi kalau nggak ada hasil normalisasi iTunes, coba tebak dari judul yang
+ * ada tanda "-" (2 urutan kemungkinan: "A - B" & "B - A").
+ */
+async function fetchFromLyricsOvh(cleanedTitle, normalized) {
   const candidates = [];
-
-  try {
-    const normalized = await lookupItunes(cleaned);
-    if (normalized) candidates.push(normalized);
-  } catch {
-    // Gagal/timeout iTunes -- tetep lanjut ke fallback manual di bawah.
-  }
-
-  const dashParts = cleaned.split(/\s+-\s+/);
+  if (normalized) candidates.push(normalized);
+  const dashParts = cleanedTitle.split(/\s+-\s+/);
   if (dashParts.length === 2) {
     candidates.push({ artist: dashParts[0], track: dashParts[1] });
     candidates.push({ artist: dashParts[1], track: dashParts[0] });
   }
 
-  if (candidates.length === 0) return { ok: false, reason: 'no_candidate' };
-
-  let lastError = null;
   for (const { artist, track } of candidates) {
     if (!artist || !track) continue;
+    const url = `https://api.lyrics.ovh/v1/${encodeURIComponent(artist)}/${encodeURIComponent(track)}`;
+    const res = await withTimeout(fetch(url), 8000, 'Lyrics.ovh');
+    if (res.status === 404) continue;
+    if (!res.ok) throw new Error(`Lyrics.ovh error ${res.status}`);
+    const data = await res.json();
+    if (data?.lyrics?.trim()) return { lyrics: data.lyrics.trim(), artist, track };
+  }
+  return null;
+}
+
+/**
+ * Entry point utama: terima judul track mentah (biasanya judul video
+ * YouTube), balikin `{ ok:true, lyrics, artist, track, source }` atau
+ * `{ ok:false, reason }`. Nyoba 3 sumber berurutan (lihat catatan di atas
+ * file) -- baru dianggap gagal kalau SEMUANYA nggak nemu/error.
+ */
+async function getLyrics(rawTitle) {
+  const cleaned = cleanTitle(rawTitle);
+  if (!cleaned) return { ok: false, reason: 'empty_title' };
+
+  let normalized = null;
+  try {
+    normalized = await lookupItunes(cleaned);
+  } catch {
+    // Gagal/timeout iTunes -- tetep lanjut, sumber lirik masih bisa dicoba
+    // pakai judul mentah yang udah dibersihin.
+  }
+  const searchQuery = normalized ? `${normalized.artist} ${normalized.track}` : cleaned;
+
+  const sources = [
+    { name: 'LRCLIB', run: () => fetchFromLrclib(cleaned, normalized) },
+    { name: 'Genius', run: () => fetchFromGenius(searchQuery) },
+    { name: 'Lyrics.ovh', run: () => fetchFromLyricsOvh(cleaned, normalized) },
+  ];
+
+  let lastError = null;
+  for (const source of sources) {
     try {
-      const lyrics = await fetchLyricsOvh(artist, track);
-      if (lyrics) return { ok: true, lyrics, artist, track };
+      const found = await source.run();
+      if (found?.lyrics) return { ok: true, ...found, source: source.name };
     } catch (err) {
       lastError = err;
     }
@@ -122,9 +231,8 @@ function buildLyricsEmbed(track, result) {
   if (!result.ok) {
     const reasonText = {
       empty_title: 'Judul lagunya nggak kebaca.',
-      no_candidate: `Nggak nemu nama artis/judul yang jelas dari **${track.title}**.`,
-      not_found: `Lirik buat **${track.title}** nggak ketemu.`,
-      fetch_error: 'Lagi ada gangguan pas ambil lirik, coba lagi bentar lagi.',
+      not_found: `Lirik buat **${track.title}** nggak ketemu di semua sumber yang dicoba.`,
+      fetch_error: 'Lagi ada gangguan pas ambil lirik dari semua sumber, coba lagi bentar lagi.',
     }[result.reason] || `Lirik buat **${track.title}** nggak ketemu.`;
     return new EmbedBuilder().setColor(0x99aab5).setDescription(`📭 ${reasonText}`);
   }
@@ -138,7 +246,7 @@ function buildLyricsEmbed(track, result) {
     .setColor(LYRICS_COLOR)
     .setAuthor({ name: `🎤  Lirik — ${result.artist} - ${result.track}` })
     .setDescription(lyrics)
-    .setFooter({ text: 'Lirik via lyrics.ovh' });
+    .setFooter({ text: `Lirik via ${result.source}` });
 }
 
 module.exports = { getLyrics, cleanTitle, buildLyricsEmbed };
