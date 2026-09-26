@@ -118,9 +118,11 @@ function buildPlaylistDetailEmbed(guildId, name) {
 
 /**
  * Tombol-tombol di layar detail playlist -- 6 tombol (Play, Add, Rename,
- * Delete, Back, Home) dibagi rata 3-3 biar nggak nabrak limit 5/baris.
+ * Hapus Lagu, Back, Home) dibagi rata 3-3 biar nggak nabrak limit 5/baris.
  * Nama playlist-nya dikodein di tiap customId (`::<nama>`) biar handler-nya
- * di index.js tau lagi ngurusin playlist yang mana.
+ * di index.js tau lagi ngurusin playlist yang mana. "Hapus Lagu" cuma
+ * ngehapus SATU lagu (lewat modal, minta nomor urutnya) -- BUKAN ngehapus
+ * seluruh playlist (buat itu, tetep pakai `/playlist delete`).
  */
 function buildPlaylistDetailButtons(name) {
   const row1 = new ActionRowBuilder().addComponents(
@@ -129,7 +131,7 @@ function buildPlaylistDetailButtons(name) {
     new ButtonBuilder().setCustomId(`panelplaylist_rename::${name}`).setLabel('Rename').setEmoji('✏️').setStyle(ButtonStyle.Secondary)
   );
   const row2 = new ActionRowBuilder().addComponents(
-    new ButtonBuilder().setCustomId(`panelplaylist_delete::${name}`).setLabel('Delete').setEmoji('🗑️').setStyle(ButtonStyle.Danger),
+    new ButtonBuilder().setCustomId(`panelplaylist_deletetrack::${name}`).setLabel('Hapus Lagu').setEmoji('🗑️').setStyle(ButtonStyle.Danger),
     buildBackButton('panel_music'),
     buildHomeButton()
   );
@@ -186,6 +188,50 @@ async function addCurrentTrackToPlaylist(interaction, name) {
   await interaction.reply({
     embeds: [
       textEmbed(`**${current.title}** ditambahin ke playlist **${name}** (total sekarang: ${result.trackCount} lagu).`),
+    ],
+    flags: MessageFlags.Ephemeral,
+  });
+}
+
+/** Modal hapus 1 lagu dari playlist -- minta nomor urut lagunya (liat daftar di layar detail). */
+function buildDeleteTrackModal(name) {
+  const modal = new ModalBuilder().setCustomId(`panelplaylist_deletetrack_modal::${name}`).setTitle('Hapus Lagu dari Playlist');
+  const numberInput = new TextInputBuilder()
+    .setCustomId('panelplaylist_track_number')
+    .setLabel('Nomor lagu (liat daftar di atas)')
+    .setStyle(TextInputStyle.Short)
+    .setRequired(true)
+    .setMaxLength(4)
+    .setPlaceholder('misal: 3');
+  modal.addComponents(new ActionRowBuilder().addComponents(numberInput));
+  return modal;
+}
+
+/** Handler submit modal hapus lagu -- validasi nomor & panggil playlistStore.removeTrackAt. */
+async function handleDeleteTrackModalSubmit(interaction, name) {
+  const raw = interaction.fields.getTextInputValue('panelplaylist_track_number')?.trim();
+  const index = parseInt(raw, 10);
+  if (!Number.isInteger(index) || index < 1) {
+    await interaction.reply({
+      content: 'Nomor lagu nggak valid -- masukin angka sesuai urutan di daftar (misal: 3).',
+      flags: MessageFlags.Ephemeral,
+    });
+    return;
+  }
+
+  const result = playlistStore.removeTrackAt(interaction.guildId, name, index);
+  if (!result.ok) {
+    const msg =
+      result.reason === 'not_found'
+        ? `Playlist **${name}** nggak ketemu (mungkin udah kehapus).`
+        : `Nomor ${index} nggak ada di playlist **${name}**.`;
+    await interaction.reply({ embeds: [textEmbed(msg)], flags: MessageFlags.Ephemeral });
+    return;
+  }
+
+  await interaction.reply({
+    embeds: [
+      textEmbed(`🗑️ **${result.removedTitle}** dihapus dari playlist **${name}** (sisa ${result.trackCount} lagu).`),
     ],
     flags: MessageFlags.Ephemeral,
   });
@@ -469,3 +515,5 @@ module.exports.playPlaylistForPanel = playPlaylistForPanel;
 module.exports.addCurrentTrackToPlaylist = addCurrentTrackToPlaylist;
 module.exports.buildRenameModal = buildRenameModal;
 module.exports.handleRenameModalSubmit = handleRenameModalSubmit;
+module.exports.buildDeleteTrackModal = buildDeleteTrackModal;
+module.exports.handleDeleteTrackModalSubmit = handleDeleteTrackModalSubmit;
