@@ -3,6 +3,7 @@ const musicManager = require('./musicManager');
 const { resolveTrack, isPlaylistUrl, resolvePlaylist } = require('./trackResolver');
 const { buildNowPlayingCard, claimNowPlayingCard } = require('./nowPlayingCard');
 const playlistStore = require('./musicPlaylistStore');
+const musicPlaylistCommands = require('./musicPlaylistCommands');
 const permissions = require('./permissions');
 const voteManager = require('./voteManager');
 const { COLOR, textEmbed, formatEta, formatTotalDuration } = require('./musicFormat');
@@ -300,7 +301,10 @@ async function cmdPlaylist(message, args, rest) {
 
     let result;
     try {
-      result = playlistStore.savePlaylist(message.guild.id, name, tracks);
+      result = playlistStore.savePlaylist(message.guild.id, name, tracks, {
+        id: message.author.id,
+        tag: message.author.tag,
+      });
     } catch (err) {
       await message.channel.send({ embeds: [textEmbed(err.message)] });
       return;
@@ -347,7 +351,10 @@ async function cmdPlaylist(message, args, rest) {
 
     let result;
     try {
-      result = playlistStore.appendToPlaylist(message.guild.id, normalizeName(name), resolvedTracks);
+      result = playlistStore.appendToPlaylist(message.guild.id, normalizeName(name), resolvedTracks, {
+        id: message.author.id,
+        tag: message.author.tag,
+      });
     } catch (err) {
       await message.channel.send({ embeds: [textEmbed(err.message)] });
       return;
@@ -404,21 +411,23 @@ async function cmdPlaylist(message, args, rest) {
   }
 
   if (sub === 'delete') {
-    // Playlist-nya SHARED (bisa dilihat & dipakai semua member server), jadi
-    // yang boleh ngehapus SELURUH playlist dibatesin ke yang punya izin
-    // Manage Server aja -- samain sama gerbang izin yang sama di /playlist delete.
-    if (!message.member?.permissions?.has(PermissionFlagsBits.ManageGuild)) {
-      await message.channel.send({
-        embeds: [textEmbed('Cuma yang punya izin Manage Server yang bisa hapus playlist server ini.')],
-      });
-      return;
-    }
-
     const name = subRest.trim();
     if (!name) {
       await message.channel.send({ embeds: [textEmbed(`Gunakan: \`${PREFIX}playlist delete <nama>\``)] });
       return;
     }
+
+    // Playlist-nya SHARED (bisa dilihat & dipakai semua member server), tapi
+    // yang boleh NGEHAPUS-nya cuma pemilik/pembuat aslinya -- samain sama
+    // gerbang izin yang sama di /playlist delete. Playlist "yatim" (dibuat
+    // sebelum fitur ini ada) fallback ke izin Manage Server.
+    const hasManageGuild = !!message.member?.permissions?.has(PermissionFlagsBits.ManageGuild);
+    const check = playlistStore.canDelete(message.guild.id, name, message.author.id, hasManageGuild);
+    if (!check.allowed) {
+      await message.channel.send({ embeds: [textEmbed(musicPlaylistCommands.buildDeleteDenialMessage(name, check))] });
+      return;
+    }
+
     const deleted = playlistStore.deletePlaylist(message.guild.id, name);
     await message.channel.send({
       embeds: [textEmbed(deleted ? `Playlist **${name}** dihapus.` : `Playlist **${name}** nggak ketemu.`)],
