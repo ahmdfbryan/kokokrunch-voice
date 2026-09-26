@@ -9,6 +9,7 @@ const {
   ModalBuilder,
   TextInputBuilder,
   TextInputStyle,
+  PermissionFlagsBits,
 } = require('discord.js');
 const musicManager = require('./musicManager');
 const playlistStore = require('./musicPlaylistStore');
@@ -494,6 +495,18 @@ const playlistCommand = {
     }
 
     if (sub === 'delete') {
+      // Playlist-nya SHARED (bisa dilihat & dipakai semua member server), jadi
+      // yang boleh ngehapus SELURUH playlist dibatesin ke yang punya izin
+      // Manage Server aja -- biar nggak sembarang member bisa ngilangin
+      // playlist yang dipakai bareng-bareng.
+      if (!interaction.memberPermissions?.has(PermissionFlagsBits.ManageGuild)) {
+        await interaction.reply({
+          embeds: [textEmbed('Cuma yang punya izin Manage Server yang bisa hapus playlist server ini.')],
+          flags: MessageFlags.Ephemeral,
+        });
+        return;
+      }
+
       const name = interaction.options.getString('nama', true);
       const deleted = playlistStore.deletePlaylist(interaction.guildId, name);
       if (!deleted) {
