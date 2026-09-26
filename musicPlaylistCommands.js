@@ -439,7 +439,10 @@ function buildDeleteTrackModal(name) {
  * BEDA dari modal submit lain di file ini: begitu lagunya BENERAN kehapus,
  * layar panel-nya (embed detail playlist yang lagi kebuka) langsung di-
  * REFRESH di tempat (`interaction.update()`) biar daftar lagunya kelihatan
- * update tanpa pengguna harus buka ulang dari dropdown. Jalur gagal/ditolak
+ * update tanpa pengguna harus buka ulang dari dropdown -- TERUS nyusul
+ * keterangan "🗑️ ... dihapus ..." dikirim lagi lewat `followUp()` sebagai
+ * pesan EPHEMERAL (cuma yang mencet doang yang bisa liat), biar pengguna
+ * tetep dikasih tau lagu mana yang barusan kehapus. Jalur gagal/ditolak
  * (bukan pemilik, nomor invalid/nggak ketemu) tetep balesnya pakai ephemeral
  * reply biasa (nggak ada yang perlu di-refresh karena playlist-nya nggak
  * berubah). `onScreenUpdated(embed, components)` -- kalau dikasih -- dipanggil
@@ -484,6 +487,15 @@ async function handleDeleteTrackModalSubmit(interaction, name, onScreenUpdated) 
   if (typeof onScreenUpdated === 'function') {
     onScreenUpdated(updatedEmbed, updatedComponents);
   }
+
+  // Keterangan lagu yang kehapus -- ephemeral (cuma pengklik yang liat),
+  // nyusul SETELAH update layar panel di atas (bukan gantiin), soalnya 1
+  // interaksi cuma bisa dibales sekali (update udah makan slot balesan
+  // utamanya), jadi ini dikirim lewat followUp().
+  await interaction.followUp({
+    embeds: [textEmbed(`🗑️ **${result.removedTitle}** dihapus dari playlist **${name}** (sisa ${result.trackCount} lagu).`)],
+    flags: MessageFlags.Ephemeral,
+  });
 }
 
 /** Modal ganti nama playlist -- nama lama dikodein di customId modalnya, input-nya di-prefill sama nama lama. */
