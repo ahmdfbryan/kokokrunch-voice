@@ -96,6 +96,86 @@ function buildPlaylistSelectRow(guildId) {
 }
 
 /**
+ * Row navigasi khusus layar overview "Playlist" (beda dari `buildBackAndHomeRow`
+ * biasa) -- nambahin tombol "Buat Playlist" di depan Back/Home. Klik tombol
+ * ini munculin modal yang CUMA minta nama (nggak perlu musik yang lagi
+ * diputar/diantrikan dulu kayak `/playlist save`), lalu bikin playlist BARU
+ * yang masih KOSONG (0 lagu), pemiliknya otomatis yang bikin. Buat
+ * nambahin lagu ke playlist yang baru dibuat itu, tinggal pilih dari
+ * dropdown Playlist buat masuk ke layar detailnya, terus pakai tombol
+ * Add / Add Antrian di situ.
+ */
+function buildPlaylistOverviewButtonsRow() {
+  return new ActionRowBuilder().addComponents(
+    new ButtonBuilder().setCustomId('panelplaylist_create').setLabel('Buat Playlist').setEmoji('🆕').setStyle(ButtonStyle.Success),
+    buildBackButton('panel_music'),
+    buildHomeButton()
+  );
+}
+
+/** Modal minta nama doang buat bikin playlist BARU (kosong) dari layar overview. */
+function buildCreatePlaylistModal() {
+  return new ModalBuilder()
+    .setCustomId('panelplaylist_create_modal')
+    .setTitle('Buat Playlist Baru')
+    .addComponents(
+      new ActionRowBuilder().addComponents(
+        new TextInputBuilder()
+          .setCustomId('panelplaylist_create_input')
+          .setLabel('Nama playlist')
+          .setStyle(TextInputStyle.Short)
+          .setMaxLength(MAX_NAME_LEN)
+          .setRequired(true)
+      )
+    );
+}
+
+/**
+ * Submit modal "Buat Playlist" -- bikin playlist BARU yang masih KOSONG (0
+ * lagu), pemiliknya otomatis yang ngisi form ini. Nolak kalau namanya udah
+ * dipakai playlist lain di server ini (biar nggak numpuk/ketimpa nggak
+ * sengaja -- buat nambahin lagu ke playlist yang UDAH ADA, tinggal pilih dari
+ * dropdown terus pakai Add/Add Antrian, bukan bikin baru lewat sini lagi).
+ */
+async function handleCreatePlaylistModalSubmit(interaction) {
+  const name = interaction.fields.getTextInputValue('panelplaylist_create_input')?.trim().slice(0, MAX_NAME_LEN);
+  if (!name) {
+    await interaction.reply({ embeds: [textEmbed('Nama playlist nggak boleh kosong.')], flags: MessageFlags.Ephemeral });
+    return;
+  }
+
+  const existing = playlistStore.getPlaylist(interaction.guildId, name);
+  if (existing) {
+    await interaction.reply({
+      embeds: [
+        textEmbed(
+          `Playlist **${name}** udah ada. Pilih dari dropdown **Playlist** buat masuk ke situ (terus pakai Add/Add Antrian buat nambahin lagu), atau pakai nama lain buat bikin playlist baru.`
+        ),
+      ],
+      flags: MessageFlags.Ephemeral,
+    });
+    return;
+  }
+
+  let result;
+  try {
+    result = playlistStore.savePlaylist(interaction.guildId, name, [], { id: interaction.user.id, tag: interaction.user.tag });
+  } catch (err) {
+    await interaction.reply({ embeds: [textEmbed(err.message)], flags: MessageFlags.Ephemeral });
+    return;
+  }
+
+  await interaction.reply({
+    embeds: [
+      textEmbed(
+        `Playlist **${name}** berhasil dibuat (masih kosong, ${result.trackCount} lagu). Pilih dia dari dropdown **Playlist** di bawah buat masuk ke situ, terus pakai tombol **Add** (lagu yang lagi diputar) atau **Add Antrian** (lagu yang lagi diputar + semua yang lagi antri) buat mulai ngisi.`
+      ),
+    ],
+    flags: MessageFlags.Ephemeral,
+  });
+}
+
+/**
  * Embed detail isi 1 playlist -- overview (jumlah lagu & total durasi) di
  * atas, lalu daftar lagunya satu-satu (dibatasin MAX_TRACKS_SHOWN_IN_DETAIL
  * biar description-nya nggak kepanjangan). Return null kalau playlist-nya
@@ -724,6 +804,9 @@ const playlistCommand = {
 module.exports = [playlistCommand];
 module.exports.buildPlaylistOverviewEmbed = buildPlaylistOverviewEmbed;
 module.exports.buildPlaylistSelectRow = buildPlaylistSelectRow;
+module.exports.buildPlaylistOverviewButtonsRow = buildPlaylistOverviewButtonsRow;
+module.exports.buildCreatePlaylistModal = buildCreatePlaylistModal;
+module.exports.handleCreatePlaylistModalSubmit = handleCreatePlaylistModalSubmit;
 module.exports.buildPlaylistDetailEmbed = buildPlaylistDetailEmbed;
 module.exports.buildPlaylistDetailButtons = buildPlaylistDetailButtons;
 module.exports.playPlaylistForPanel = playPlaylistForPanel;
