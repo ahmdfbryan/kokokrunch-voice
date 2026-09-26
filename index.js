@@ -1478,6 +1478,19 @@ client.on('interactionCreate', async (interaction) => {
       return;
     }
 
+    // Tombol "Add Antrian" -- nambahin SEMUA lagu yang lagi diputar + di
+    // antrian sekaligus ke playlist ini (beda dari "Add" biasa yang cuma
+    // nambahin 1 lagu yang lagi diputar). Leaf action, ephemeral ack.
+    if (interaction.customId.startsWith('panelplaylist_addqueue::')) {
+      try {
+        const name = interaction.customId.slice('panelplaylist_addqueue::'.length);
+        await musicPlaylistCommands.addQueueToPlaylist(interaction, name);
+      } catch (err) {
+        log(`[PANEL] Error tombol panelplaylist_addqueue: ${err?.stack || err}`);
+      }
+      return;
+    }
+
     // Tombol "Rename" -- munculin modal ganti nama (nama lama dikodein di
     // customId modal-nya), submit-nya ditangani di blok isModalSubmit() di
     // bawah. Playlist-nya SHARED, tapi yang boleh NGGANTI NAMA cuma
