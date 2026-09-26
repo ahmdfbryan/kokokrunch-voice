@@ -1528,6 +1528,35 @@ client.on('interactionCreate', async (interaction) => {
       return;
     }
 
+    // Tombol "Hapus Playlist" -- ngehapus SELURUH playlist-nya langsung
+    // (nggak ada modal/konfirmasi, konsisten sama tombol destruktif lain
+    // kayak Matikan TikTok), lalu balik ke layar overview karena layar detail
+    // udah nggak valid lagi. Sama kayak Hapus Lagu, cuma pemilik/pembuat
+    // playlist ini yang boleh (playlist "yatim" fallback ke izin Manage
+    // Server).
+    if (interaction.customId.startsWith('panelplaylist_deleteall::')) {
+      try {
+        const name = interaction.customId.slice('panelplaylist_deleteall::'.length);
+        const hasManageGuild = !!interaction.memberPermissions?.has(PermissionFlagsBits.ManageGuild);
+        const check = musicPlaylistStore.canDelete(interaction.guildId, name, interaction.user.id, hasManageGuild);
+        if (!check.allowed) {
+          await interaction.reply({
+            content: musicPlaylistCommands.buildDeleteDenialMessage(name, check),
+            flags: MessageFlags.Ephemeral,
+          });
+          return;
+        }
+        musicPlaylistStore.deletePlaylist(interaction.guildId, name);
+        const overviewEmbed = musicPlaylistCommands.buildPlaylistOverviewEmbed(interaction.guildId);
+        const selectRow = musicPlaylistCommands.buildPlaylistSelectRow(interaction.guildId);
+        const components = selectRow ? [selectRow, buildBackAndHomeRow('panel_music')] : [buildBackAndHomeRow('panel_music')];
+        await respondPanelScreen(interaction, overviewEmbed, components);
+      } catch (err) {
+        log(`[PANEL] Error tombol panelplaylist_deleteall: ${err?.stack || err}`);
+      }
+      return;
+    }
+
     return;
   }
 
