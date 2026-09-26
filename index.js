@@ -1494,19 +1494,22 @@ client.on('interactionCreate', async (interaction) => {
     // layar detail), nama playlist-nya dikodein di customId modal-nya.
     // Submit-nya ditangani di blok isModalSubmit() di bawah -- HANYA ngehapus
     // 1 lagu, bukan seluruh playlist (buat itu tetep pakai `/playlist delete`).
-    // Playlist-nya SHARED (bisa dilihat & dipakai semua member server), jadi
-    // yang boleh ngehapus lagu dari situ dibatesin ke yang punya izin Manage
-    // Server aja -- sama kayak gerbang izin di tombol Buat Giveaway.
+    // Playlist-nya SHARED (bisa dilihat & dipakai semua member server), tapi
+    // yang boleh NGEHAPUS lagunya cuma pemilik/pembuat playlist itu sendiri
+    // (playlist "yatim" dari sebelum fitur ini ada fallback ke izin Manage
+    // Server).
     if (interaction.customId.startsWith('panelplaylist_deletetrack::')) {
       try {
-        if (!interaction.memberPermissions?.has(PermissionFlagsBits.ManageGuild)) {
+        const name = interaction.customId.slice('panelplaylist_deletetrack::'.length);
+        const hasManageGuild = !!interaction.memberPermissions?.has(PermissionFlagsBits.ManageGuild);
+        const check = musicPlaylistStore.canDelete(interaction.guildId, name, interaction.user.id, hasManageGuild);
+        if (!check.allowed) {
           await interaction.reply({
-            content: 'Cuma yang punya izin Manage Server yang bisa hapus lagu dari playlist server ini.',
+            content: musicPlaylistCommands.buildDeleteDenialMessage(name, check),
             flags: MessageFlags.Ephemeral,
           });
           return;
         }
-        const name = interaction.customId.slice('panelplaylist_deletetrack::'.length);
         await interaction.showModal(musicPlaylistCommands.buildDeleteTrackModal(name));
       } catch (err) {
         log(`[PANEL] Error tombol panelplaylist_deletetrack: ${err?.stack || err}`);
