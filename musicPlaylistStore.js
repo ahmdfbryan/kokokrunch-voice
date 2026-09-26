@@ -106,6 +106,26 @@ function deletePlaylist(scopeId, name) {
 }
 
 /**
+ * Hapus SATU lagu aja dari playlist (dipakai dari tombol "Hapus Lagu" di
+ * panel) -- beda dari `deletePlaylist` yang ngehapus SELURUH playlist.
+ * `indexOneBased` ngikutin nomor urut yang ditampilin di layar detail
+ * playlist (1 = lagu pertama).
+ */
+function removeTrackAt(scopeId, name, indexOneBased) {
+  const tracks = data[scopeId]?.[name];
+  if (!tracks) return { ok: false, reason: 'not_found' };
+
+  const idx = indexOneBased - 1;
+  if (!Number.isInteger(idx) || idx < 0 || idx >= tracks.length) {
+    return { ok: false, reason: 'out_of_range' };
+  }
+
+  const [removed] = tracks.splice(idx, 1);
+  saveSync();
+  return { ok: true, removedTitle: removed.title, trackCount: tracks.length };
+}
+
+/**
  * Ganti nama playlist (dipakai dari tombol "Rename" di panel). Nolak kalau
  * nama lama nggak ketemu atau nama baru udah dipakai playlist lain (di
  * server yang sama).
@@ -132,6 +152,7 @@ module.exports = {
   getPlaylist,
   listPlaylists,
   deletePlaylist,
+  removeTrackAt,
   renamePlaylist,
   MAX_PLAYLISTS_PER_GUILD,
   MAX_TRACKS_PER_PLAYLIST,
