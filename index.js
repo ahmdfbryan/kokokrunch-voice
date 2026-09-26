@@ -1423,8 +1423,8 @@ client.on('interactionCreate', async (interaction) => {
 
     if (interaction.customId === 'panelmusic_playlist') {
       try {
-        const embed = musicPlaylistCommands.buildPlaylistOverviewEmbed(interaction.user.id);
-        const selectRow = musicPlaylistCommands.buildPlaylistSelectRow(interaction.user.id);
+        const embed = musicPlaylistCommands.buildPlaylistOverviewEmbed(interaction.guildId);
+        const selectRow = musicPlaylistCommands.buildPlaylistSelectRow(interaction.guildId);
         const components = selectRow ? [selectRow, buildBackAndHomeRow('panel_music')] : [buildBackAndHomeRow('panel_music')];
         await respondPanelScreen(interaction, embed, components);
       } catch (err) {
@@ -1442,6 +1442,49 @@ client.on('interactionCreate', async (interaction) => {
         await musicPlaylistCommands.playPlaylistForPanel(interaction, name);
       } catch (err) {
         log(`[PANEL] Error tombol panelplaylist_play: ${err?.stack || err}`);
+      }
+      return;
+    }
+
+    // Tombol "Add" di layar detail playlist -- nambahin lagu yang lagi
+    // diputar sekarang ke playlist ini. Leaf action, ephemeral ack.
+    if (interaction.customId.startsWith('panelplaylist_add::')) {
+      try {
+        const name = interaction.customId.slice('panelplaylist_add::'.length);
+        await musicPlaylistCommands.addCurrentTrackToPlaylist(interaction, name);
+      } catch (err) {
+        log(`[PANEL] Error tombol panelplaylist_add: ${err?.stack || err}`);
+      }
+      return;
+    }
+
+    // Tombol "Rename" -- munculin modal ganti nama (nama lama dikodein di
+    // customId modal-nya), submit-nya ditangani di blok isModalSubmit() di bawah.
+    if (interaction.customId.startsWith('panelplaylist_rename::')) {
+      try {
+        const name = interaction.customId.slice('panelplaylist_rename::'.length);
+        await interaction.showModal(musicPlaylistCommands.buildRenameModal(name));
+      } catch (err) {
+        log(`[PANEL] Error tombol panelplaylist_rename: ${err?.stack || err}`);
+      }
+      return;
+    }
+
+    // Tombol "Delete" -- langsung hapus (nggak ada konfirmasi, konsisten
+    // sama tombol destruktif lain kayak Matikan TikTok), lalu update panel
+    // BALIK ke layar overview (playlist yang baru kehapus otomatis ilang
+    // dari daftar), bukan ephemeral ack biasa -- soalnya layar detail yang
+    // lagi kebuka udah nggak relevan lagi abis playlist-nya dihapus.
+    if (interaction.customId.startsWith('panelplaylist_delete::')) {
+      try {
+        const name = interaction.customId.slice('panelplaylist_delete::'.length);
+        musicPlaylistStore.deletePlaylist(interaction.guildId, name);
+        const overviewEmbed = musicPlaylistCommands.buildPlaylistOverviewEmbed(interaction.guildId);
+        const selectRow = musicPlaylistCommands.buildPlaylistSelectRow(interaction.guildId);
+        const components = selectRow ? [selectRow, buildBackAndHomeRow('panel_music')] : [buildBackAndHomeRow('panel_music')];
+        await respondPanelScreen(interaction, overviewEmbed, components);
+      } catch (err) {
+        log(`[PANEL] Error tombol panelplaylist_delete: ${err?.stack || err}`);
       }
       return;
     }
@@ -1671,6 +1714,18 @@ client.on('interactionCreate', async (interaction) => {
       return;
     }
 
+    // Submit modal "Rename" playlist -- nama lama dikodein di customId
+    // modal-nya (panelplaylist_rename_modal::<nama_lama>).
+    if (interaction.customId.startsWith('panelplaylist_rename_modal::')) {
+      try {
+        const oldName = interaction.customId.slice('panelplaylist_rename_modal::'.length);
+        await musicPlaylistCommands.handleRenameModalSubmit(interaction, oldName);
+      } catch (err) {
+        log(`[PANEL] Error submit panelplaylist_rename_modal: ${err?.stack || err}`);
+      }
+      return;
+    }
+
     return;
   }
 
@@ -1699,16 +1754,16 @@ client.on('interactionCreate', async (interaction) => {
     if (interaction.customId === 'panelplaylist_select') {
       try {
         const name = interaction.values[0];
-        const detailEmbed = musicPlaylistCommands.buildPlaylistDetailEmbed(interaction.user.id, name);
+        const detailEmbed = musicPlaylistCommands.buildPlaylistDetailEmbed(interaction.guildId, name);
         if (!detailEmbed) {
           // Race condition (misal playlist-nya kehapus barengan) -- balik ke overview lagi.
-          const overviewEmbed = musicPlaylistCommands.buildPlaylistOverviewEmbed(interaction.user.id);
-          const selectRow = musicPlaylistCommands.buildPlaylistSelectRow(interaction.user.id);
+          const overviewEmbed = musicPlaylistCommands.buildPlaylistOverviewEmbed(interaction.guildId);
+          const selectRow = musicPlaylistCommands.buildPlaylistSelectRow(interaction.guildId);
           const components = selectRow ? [selectRow, buildBackAndHomeRow('panel_music')] : [buildBackAndHomeRow('panel_music')];
           await respondPanelScreen(interaction, overviewEmbed, components);
           return;
         }
-        await respondPanelScreen(interaction, detailEmbed, [musicPlaylistCommands.buildPlaylistDetailButtons(name)]);
+        await respondPanelScreen(interaction, detailEmbed, musicPlaylistCommands.buildPlaylistDetailButtons(name));
       } catch (err) {
         log(`[PANEL] Error dropdown panelplaylist_select: ${err?.stack || err}`);
       }
