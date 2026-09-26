@@ -1,4 +1,4 @@
-const { EmbedBuilder } = require('discord.js');
+const { EmbedBuilder, PermissionFlagsBits } = require('discord.js');
 const musicManager = require('./musicManager');
 const { resolveTrack, isPlaylistUrl, resolvePlaylist } = require('./trackResolver');
 const { buildNowPlayingCard, claimNowPlayingCard } = require('./nowPlayingCard');
@@ -404,6 +404,16 @@ async function cmdPlaylist(message, args, rest) {
   }
 
   if (sub === 'delete') {
+    // Playlist-nya SHARED (bisa dilihat & dipakai semua member server), jadi
+    // yang boleh ngehapus SELURUH playlist dibatesin ke yang punya izin
+    // Manage Server aja -- samain sama gerbang izin yang sama di /playlist delete.
+    if (!message.member?.permissions?.has(PermissionFlagsBits.ManageGuild)) {
+      await message.channel.send({
+        embeds: [textEmbed('Cuma yang punya izin Manage Server yang bisa hapus playlist server ini.')],
+      });
+      return;
+    }
+
     const name = subRest.trim();
     if (!name) {
       await message.channel.send({ embeds: [textEmbed(`Gunakan: \`${PREFIX}playlist delete <nama>\``)] });
