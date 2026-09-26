@@ -1,4 +1,5 @@
 const config = require('./config');
+const { PermissionFlagsBits } = require('discord.js');
 
 /**
  * Cek apakah member boleh /stop atau /skip musik: owner server, punya role
@@ -32,4 +33,29 @@ async function canControlPlaybackByUserId(client, guildId, userId, currentTrack)
   }
 }
 
-module.exports = { canControlPlayback, canControlPlaybackByUserId };
+/**
+ * Cek apakah member punya izin Manage Server -- dipakai buat ngegerbangin
+ * aksi yang ngubah/ngehapus resource SHARED milik server (misal hapus
+ * playlist musik server), biar nggak sembarang member bisa ngerusak punya
+ * yang lain.
+ */
+function canManageGuild(member) {
+  return !!member?.permissions?.has?.(PermissionFlagsBits.ManageGuild);
+}
+
+/**
+ * Versi async buat konteks yang cuma punya userId mentah (bukan member
+ * object langsung) -- dipakai AI tool call, sama pola-nya kayak
+ * `canControlPlaybackByUserId`.
+ */
+async function canManageGuildByUserId(client, guildId, userId) {
+  try {
+    const guild = await client.guilds.fetch(guildId);
+    const member = await guild.members.fetch(userId);
+    return canManageGuild(member);
+  } catch {
+    return false;
+  }
+}
+
+module.exports = { canControlPlayback, canControlPlaybackByUserId, canManageGuild, canManageGuildByUserId };
