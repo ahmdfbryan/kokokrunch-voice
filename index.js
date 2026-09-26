@@ -312,9 +312,13 @@ async function repositionChannelStack(guildId, channelId) {
     }
 
     // Panel dikirim DULUAN (biar nempatin posisi lebih atas), baru Now
-    // Playing nyusul (biar dia yang paling akhir/paling bawah).
+    // Playing nyusul (biar dia yang paling akhir/paling bawah). Kalau user
+    // lagi buka layar SELAIN Home (ada snapshot tersimpan), pakai itu apa
+    // adanya -- bukan rebuild ke Home -- biar posisi/layar terakhirnya
+    // nggak ke-reset gara-gara channel-nya rame chat.
     if (panel) {
-      const { embed, components } = buildPanelCard(client, commands.length);
+      const storedScreen = panelStore.getPanelScreen(channelId);
+      const { embed, components } = storedScreen || buildPanelCard(client, commands.length);
       const sentPanel = await channel.send({ embeds: [embed], components });
       panelStore.setPanelMessageId(channelId, sentPanel.id);
     }
@@ -488,8 +492,24 @@ function buildVoiceStatsEmbed(user) {
 // PESAN PANEL ITU SENDIRI lewat interaction.update(), jadi embed-nya
 // "berubah wujud" jadi layar fitur yang dipilih, dan tombol Home di layar
 // manapun cukup balikin lagi jadi embed Panel Utama.
-async function respondPanelScreen(interaction, embed, components) {
+//
+// Selain update() pesannya, layar yang baru ditampilin ini juga di-SNAPSHOT
+// ke panelStore (kecuali layar Home, lihat `isHome`) -- soalnya kalau
+// channel-nya lagi rame chat, `repositionChannelStack` bakal ngirim ulang
+// pesan panel di posisi paling bawah, dan tanpa snapshot ini dia bakal
+// SELALU balik ke Home (ngereset layar yang lagi dibuka user, misal lagi di
+// tengah-tengah ngurus Streak). Home sengaja NGGAK disnapshot biar
+// stats-nya (uptime/ping) tetep fresh tiap kali direposisi.
+async function respondPanelScreen(interaction, embed, components, opts = {}) {
   await interaction.update({ embeds: [embed], components });
+  if (opts.isHome) {
+    panelStore.setPanelScreen(interaction.channelId, null);
+  } else {
+    panelStore.setPanelScreen(interaction.channelId, {
+      embed: typeof embed?.toJSON === 'function' ? embed.toJSON() : embed,
+      components: (components || []).map((row) => (typeof row?.toJSON === 'function' ? row.toJSON() : row)),
+    });
+  }
 }
 
 async function handlePanelQueue(interaction) {
@@ -937,7 +957,7 @@ client.on('interactionCreate', async (interaction) => {
     if (interaction.customId === 'panel_home') {
       try {
         const { embed, components } = buildPanelCard(client, commands.length);
-        await respondPanelScreen(interaction, embed, components);
+        await respondPanelScreen(interaction, embed, components, { isHome: true });
       } catch (err) {
         log(`[PANEL] Error tombol panel_home: ${err?.stack || err}`);
       }
@@ -1470,21 +1490,16 @@ client.on('interactionCreate', async (interaction) => {
       return;
     }
 
-    // Tombol "Delete" -- langsung hapus (nggak ada konfirmasi, konsisten
-    // sama tombol destruktif lain kayak Matikan TikTok), lalu update panel
-    // BALIK ke layar overview (playlist yang baru kehapus otomatis ilang
-    // dari daftar), bukan ephemeral ack biasa -- soalnya layar detail yang
-    // lagi kebuka udah nggak relevan lagi abis playlist-nya dihapus.
-    if (interaction.customId.startsWith('panelplaylist_delete::')) {
+    // Tombol "Hapus Lagu" -- munculin modal minta nomor lagu (liat daftar di
+    // layar detail), nama playlist-nya dikodein di customId modal-nya.
+    // Submit-nya ditangani di blok isModalSubmit() di bawah -- HANYA ngehapus
+    // 1 lagu, bukan seluruh playlist (buat itu tetep pakai `/playlist delete`).
+    if (interaction.customId.startsWith('panelplaylist_deletetrack::')) {
       try {
-        const name = interaction.customId.slice('panelplaylist_delete::'.length);
-        musicPlaylistStore.deletePlaylist(interaction.guildId, name);
-        const overviewEmbed = musicPlaylistCommands.buildPlaylistOverviewEmbed(interaction.guildId);
-        const selectRow = musicPlaylistCommands.buildPlaylistSelectRow(interaction.guildId);
-        const components = selectRow ? [selectRow, buildBackAndHomeRow('panel_music')] : [buildBackAndHomeRow('panel_music')];
-        await respondPanelScreen(interaction, overviewEmbed, components);
+        const name = interaction.customId.slice('panelplaylist_deletetrack::'.length);
+        await interaction.showModal(musicPlaylistCommands.buildDeleteTrackModal(name));
       } catch (err) {
-        log(`[PANEL] Error tombol panelplaylist_delete: ${err?.stack || err}`);
+        log(`[PANEL] Error tombol panelplaylist_deletetrack: ${err?.stack || err}`);
       }
       return;
     }
@@ -1722,6 +1737,20 @@ client.on('interactionCreate', async (interaction) => {
         await musicPlaylistCommands.handleRenameModalSubmit(interaction, oldName);
       } catch (err) {
         log(`[PANEL] Error submit panelplaylist_rename_modal: ${err?.stack || err}`);
+      }
+      return;
+    }
+
+    // Submit modal "Hapus Lagu" -- nama playlist dikodein di customId modal-nya
+    // (panelplaylist_deletetrack_modal::<nama>), nomor urut lagunya dari input
+    // teksnya. Ephemeral ack biasa (bukan interaction.update()) -- konsisten
+    // sama semua modal submit lain di file ini.
+    if (interaction.customId.startsWith('panelplaylist_deletetrack_modal::')) {
+      try {
+        const name = interaction.customId.slice('panelplaylist_deletetrack_modal::'.length);
+        await musicPlaylistCommands.handleDeleteTrackModalSubmit(interaction, name);
+      } catch (err) {
+        log(`[PANEL] Error submit panelplaylist_deletetrack_modal: ${err?.stack || err}`);
       }
       return;
     }
