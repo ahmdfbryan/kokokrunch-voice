@@ -1445,10 +1445,26 @@ client.on('interactionCreate', async (interaction) => {
       try {
         const embed = musicPlaylistCommands.buildPlaylistOverviewEmbed(interaction.guildId);
         const selectRow = musicPlaylistCommands.buildPlaylistSelectRow(interaction.guildId);
-        const components = selectRow ? [selectRow, buildBackAndHomeRow('panel_music')] : [buildBackAndHomeRow('panel_music')];
+        const navRow = musicPlaylistCommands.buildPlaylistOverviewButtonsRow();
+        const components = selectRow ? [selectRow, navRow] : [navRow];
         await respondPanelScreen(interaction, embed, components);
       } catch (err) {
         log(`[PANEL] Error tombol panelmusic_playlist: ${err?.stack || err}`);
+      }
+      return;
+    }
+
+    // Tombol "Buat Playlist" di layar overview Playlist -- munculin modal
+    // yang CUMA minta nama (nggak perlu musik lagi diputar/diantrikan dulu
+    // kayak `/playlist save`). Submit-nya bikin playlist BARU yang masih
+    // kosong, ditangani di blok isModalSubmit() di bawah. Siapa aja boleh
+    // bikin playlist baru (yang bikin otomatis jadi pemiliknya) -- nggak
+    // perlu pengecekan ownership di sini.
+    if (interaction.customId === 'panelplaylist_create') {
+      try {
+        await interaction.showModal(musicPlaylistCommands.buildCreatePlaylistModal());
+      } catch (err) {
+        log(`[PANEL] Error tombol panelplaylist_create: ${err?.stack || err}`);
       }
       return;
     }
@@ -1562,7 +1578,8 @@ client.on('interactionCreate', async (interaction) => {
         musicPlaylistStore.deletePlaylist(interaction.guildId, name);
         const overviewEmbed = musicPlaylistCommands.buildPlaylistOverviewEmbed(interaction.guildId);
         const selectRow = musicPlaylistCommands.buildPlaylistSelectRow(interaction.guildId);
-        const components = selectRow ? [selectRow, buildBackAndHomeRow('panel_music')] : [buildBackAndHomeRow('panel_music')];
+        const navRow = musicPlaylistCommands.buildPlaylistOverviewButtonsRow();
+        const components = selectRow ? [selectRow, navRow] : [navRow];
         await respondPanelScreen(interaction, overviewEmbed, components);
       } catch (err) {
         log(`[PANEL] Error tombol panelplaylist_deleteall: ${err?.stack || err}`);
@@ -1576,6 +1593,17 @@ client.on('interactionCreate', async (interaction) => {
   // Modal panel (Play & Create Giveaway) -- balasan submit modal, jenis
   // interaksi beda lagi dari button/command biasa.
   if (interaction.isModalSubmit()) {
+    // Submit modal "Buat Playlist" dari layar overview Playlist -- bikin
+    // playlist BARU yang masih kosong (nama doang dari input-nya).
+    if (interaction.customId === 'panelplaylist_create_modal') {
+      try {
+        await musicPlaylistCommands.handleCreatePlaylistModalSubmit(interaction);
+      } catch (err) {
+        log(`[PANEL] Error submit panelplaylist_create_modal: ${err?.stack || err}`);
+      }
+      return;
+    }
+
     if (interaction.customId === 'panel_play_modal') {
       const input = interaction.fields.getTextInputValue('panel_play_input')?.trim();
       if (!input) {
@@ -1854,7 +1882,8 @@ client.on('interactionCreate', async (interaction) => {
           // Race condition (misal playlist-nya kehapus barengan) -- balik ke overview lagi.
           const overviewEmbed = musicPlaylistCommands.buildPlaylistOverviewEmbed(interaction.guildId);
           const selectRow = musicPlaylistCommands.buildPlaylistSelectRow(interaction.guildId);
-          const components = selectRow ? [selectRow, buildBackAndHomeRow('panel_music')] : [buildBackAndHomeRow('panel_music')];
+          const navRow = musicPlaylistCommands.buildPlaylistOverviewButtonsRow();
+          const components = selectRow ? [selectRow, navRow] : [navRow];
           await respondPanelScreen(interaction, overviewEmbed, components);
           return;
         }
