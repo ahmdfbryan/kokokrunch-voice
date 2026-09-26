@@ -62,9 +62,10 @@ function buildPlaylistOverviewEmbed(guildId) {
     return embed;
   }
 
-  const lines = playlists.map(
-    (p, i) => `${i + 1}. **${p.name}** — ${p.trackCount} lagu (${formatDurationLong(p.totalSeconds)})`
-  );
+  const lines = playlists.map((p, i) => {
+    const ownerSuffix = p.ownerTag ? ` — dibuat oleh **${p.ownerTag}**` : '';
+    return `${i + 1}. **${p.name}** — ${p.trackCount} lagu (${formatDurationLong(p.totalSeconds)})${ownerSuffix}`;
+  });
   embed.setDescription(
     [...lines, '', 'Pilih salah satu di dropdown bawah buat liat isi, muterin, atau kelola playlist-nya.'].join('\n')
   );
@@ -104,6 +105,11 @@ function buildPlaylistDetailEmbed(guildId, name) {
   const tracks = playlistStore.getPlaylist(guildId, name);
   if (!tracks) return null;
 
+  const owner = playlistStore.getPlaylistOwner(guildId, name);
+  const ownerLine = owner?.ownerTag
+    ? `Dibuat oleh **${owner.ownerTag}** — cuma dia (atau yang punya izin Manage Server) yang bisa hapus.`
+    : 'Dibuat sebelum fitur "pemilik playlist" ada — cuma yang punya izin Manage Server yang bisa hapus.';
+
   const totalSeconds = tracks.reduce((sum, t) => sum + (t.durationSeconds || 0), 0);
   const shown = tracks.slice(0, MAX_TRACKS_SHOWN_IN_DETAIL);
   const trackLines = shown.map((t, i) => `${i + 1}. ${t.title}${t.durationText ? ` — \`${t.durationText}\`` : ''}`);
@@ -114,7 +120,9 @@ function buildPlaylistDetailEmbed(guildId, name) {
   return new EmbedBuilder()
     .setColor(COLOR)
     .setAuthor({ name: `📁  ${name}` })
-    .setDescription([`**${tracks.length}** lagu • **${formatDurationLong(totalSeconds)}**`, '', ...trackLines].join('\n'));
+    .setDescription(
+      [`**${tracks.length}** lagu • **${formatDurationLong(totalSeconds)}**`, ownerLine, '', ...trackLines].join('\n')
+    );
 }
 
 /**
@@ -185,13 +193,35 @@ async function addCurrentTrackToPlaylist(interaction, name) {
     return;
   }
 
-  const result = playlistStore.appendToPlaylist(interaction.guildId, name, [current]);
+  const result = playlistStore.appendToPlaylist(interaction.guildId, name, [current], {
+    id: interaction.user.id,
+    tag: interaction.user.tag,
+  });
   await interaction.reply({
     embeds: [
       textEmbed(`**${current.title}** ditambahin ke playlist **${name}** (total sekarang: ${result.trackCount} lagu).`),
     ],
     flags: MessageFlags.Ephemeral,
   });
+}
+
+/**
+ * Pesan penolakan seragam buat SEMUA jalur hapus playlist (tombol panel,
+ * `/playlist delete`, `s!playlist delete`, & lewat AI) -- teksnya beda
+ * tergantung alasan: playlist nggak ketemu, bukan pemilik, atau playlist
+ * "yatim" (dibuat sebelum fitur pemilik ini ada, perlu izin Manage Server).
+ */
+function buildDeleteDenialMessage(name, check) {
+  if (check.reason === 'not_found') {
+    return `Playlist **${name}** nggak ketemu.`;
+  }
+  if (check.reason === 'orphaned') {
+    return `Playlist **${name}** dibuat sebelum fitur "pemilik playlist" ada -- cuma yang punya izin Manage Server yang bisa hapus playlist ini.`;
+  }
+  const ownerTag = check.owner?.ownerTag;
+  return ownerTag
+    ? `Cuma **${ownerTag}** (pemilik/pembuat playlist ini) yang bisa hapus playlist **${name}**.`
+    : `Cuma pemilik/pembuat playlist **${name}** yang bisa menghapusnya.`;
 }
 
 /** Modal hapus 1 lagu dari playlist -- minta nomor urut lagunya (liat daftar di layar detail). */
@@ -208,8 +238,20 @@ function buildDeleteTrackModal(name) {
   return modal;
 }
 
-/** Handler submit modal hapus lagu -- validasi nomor & panggil playlistStore.removeTrackAt. */
+/**
+ * Handler submit modal hapus lagu -- validasi nomor, cek pemilik playlist,
+ * baru panggil playlistStore.removeTrackAt. Pengecekan pemilik diulang di
+ * sini (bukan cuma di tombol yang munculin modalnya) buat jaga-jaga kalau
+ * ada yang manggil submit modal ini langsung tanpa lewat tombol.
+ */
 async function handleDeleteTrackModalSubmit(interaction, name) {
+  const hasManageGuild = !!interaction.memberPermissions?.has(PermissionFlagsBits.ManageGuild);
+  const check = playlistStore.canDelete(interaction.guildId, name, interaction.user.id, hasManageGuild);
+  if (!check.allowed) {
+    await interaction.reply({ embeds: [textEmbed(buildDeleteDenialMessage(name, check))], flags: MessageFlags.Ephemeral });
+    return;
+  }
+
   const raw = interaction.fields.getTextInputValue('panelplaylist_track_number')?.trim();
   const index = parseInt(raw, 10);
   if (!Number.isInteger(index) || index < 1) {
@@ -376,7 +418,10 @@ const playlistCommand = {
 
       let result;
       try {
-        result = playlistStore.savePlaylist(interaction.guildId, name, tracks);
+        result = playlistStore.savePlaylist(interaction.guildId, name, tracks, {
+          id: interaction.user.id,
+          tag: interaction.user.tag,
+        });
       } catch (err) {
         await interaction.reply({ embeds: [textEmbed(err.message)], flags: MessageFlags.Ephemeral });
         return;
@@ -440,7 +485,10 @@ const playlistCommand = {
 
       let result;
       try {
-        result = playlistStore.appendToPlaylist(interaction.guildId, name, resolvedTracks);
+        result = playlistStore.appendToPlaylist(interaction.guildId, name, resolvedTracks, {
+          id: interaction.user.id,
+          tag: interaction.user.tag,
+        });
       } catch (err) {
         await interaction.editReply({ embeds: [textEmbed(err.message)] });
         return;
@@ -495,19 +543,23 @@ const playlistCommand = {
     }
 
     if (sub === 'delete') {
-      // Playlist-nya SHARED (bisa dilihat & dipakai semua member server), jadi
-      // yang boleh ngehapus SELURUH playlist dibatesin ke yang punya izin
-      // Manage Server aja -- biar nggak sembarang member bisa ngilangin
-      // playlist yang dipakai bareng-bareng.
-      if (!interaction.memberPermissions?.has(PermissionFlagsBits.ManageGuild)) {
+      const name = interaction.options.getString('nama', true);
+
+      // Playlist-nya SHARED (bisa dilihat & dipakai semua member server),
+      // tapi yang boleh NGEHAPUS-nya cuma pemilik/pembuat aslinya -- biar
+      // nggak sembarang member bisa ngilangin playlist yang dipakai
+      // bareng-bareng. Playlist "yatim" (dibuat sebelum fitur ini ada)
+      // fallback ke izin Manage Server.
+      const hasManageGuild = !!interaction.memberPermissions?.has(PermissionFlagsBits.ManageGuild);
+      const check = playlistStore.canDelete(interaction.guildId, name, interaction.user.id, hasManageGuild);
+      if (!check.allowed) {
         await interaction.reply({
-          embeds: [textEmbed('Cuma yang punya izin Manage Server yang bisa hapus playlist server ini.')],
+          embeds: [textEmbed(buildDeleteDenialMessage(name, check))],
           flags: MessageFlags.Ephemeral,
         });
         return;
       }
 
-      const name = interaction.options.getString('nama', true);
       const deleted = playlistStore.deletePlaylist(interaction.guildId, name);
       if (!deleted) {
         await interaction.reply({ embeds: [textEmbed(`Playlist **${name}** nggak ketemu.`)], flags: MessageFlags.Ephemeral });
@@ -530,3 +582,4 @@ module.exports.buildRenameModal = buildRenameModal;
 module.exports.handleRenameModalSubmit = handleRenameModalSubmit;
 module.exports.buildDeleteTrackModal = buildDeleteTrackModal;
 module.exports.handleDeleteTrackModalSubmit = handleDeleteTrackModalSubmit;
+module.exports.buildDeleteDenialMessage = buildDeleteDenialMessage;
