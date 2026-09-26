@@ -72,12 +72,38 @@ function pickTrackFields(t) {
 }
 
 /**
+ * Saring `newTracks` biar nggak ada yang dobel (dicek lewat `url`, bukan
+ * `title`, karena judul yang sama persis bisa beda formatting/whitespace
+ * padahal videonya sama) -- baik dobel sama lagu yang UDAH ADA di
+ * `existingTracks`, maupun dobel SESAMA `newTracks` itu sendiri (misal user
+ * nambahin banyak link sekaligus yang ternyata ada yang sama). Balikin
+ * `{ deduped, skipped }` -- `deduped` cuma lagu yang beneran baru/unik,
+ * `skipped` jumlah yang kelewat karena dobel.
+ */
+function dedupeAgainstExisting(existingTracks, newTracks) {
+  const seenUrls = new Set(existingTracks.map((t) => t.url).filter(Boolean));
+  const deduped = [];
+  let skipped = 0;
+  for (const raw of newTracks) {
+    const picked = pickTrackFields(raw);
+    if (picked.url && seenUrls.has(picked.url)) {
+      skipped++;
+      continue;
+    }
+    if (picked.url) seenUrls.add(picked.url);
+    deduped.push(picked);
+  }
+  return { deduped, skipped };
+}
+
+/**
  * Simpan (atau timpa kalau nama udah ada) playlist buat 1 server. Cuma
  * nyimpen field yang perlu buat replay nanti -- bukan seluruh object track
  * mentah. `owner` = { id, tag } dari yang manggil -- CUMA dipakai buat nyatet
  * pemilik pas playlist ini BARU dibuat; kalau namanya udah ada (ditimpa),
  * pemilik ASLINYA tetap dipertahankan (nggak pindah tangan cuma gara-gara
- * member lain nyimpen ulang pakai nama yang sama).
+ * member lain nyimpen ulang pakai nama yang sama). Lagu yang dobel (link
+ * sama) di antara `tracks` yang dikasih otomatis disaring (nggak nyimpen 2x).
  */
 function savePlaylist(scopeId, name, tracks, owner) {
   if (!data[scopeId]) data[scopeId] = {};
@@ -88,8 +114,9 @@ function savePlaylist(scopeId, name, tracks, owner) {
     throw new Error(`Server ini udah punya ${MAX_PLAYLISTS_PER_GUILD} playlist (batas maksimal). Hapus salah satu dulu kalau mau nambah lagi.`);
   }
 
-  const truncated = tracks.length > MAX_TRACKS_PER_PLAYLIST;
-  const storedTracks = tracks.slice(0, MAX_TRACKS_PER_PLAYLIST).map(pickTrackFields);
+  const { deduped, skipped } = dedupeAgainstExisting([], tracks);
+  const truncated = deduped.length > MAX_TRACKS_PER_PLAYLIST;
+  const storedTracks = deduped.slice(0, MAX_TRACKS_PER_PLAYLIST);
 
   data[scopeId][name] = {
     ownerId: isNew ? owner?.id || null : existing.ownerId,
@@ -97,14 +124,17 @@ function savePlaylist(scopeId, name, tracks, owner) {
     tracks: storedTracks,
   };
   saveSync();
-  return { isNew, trackCount: storedTracks.length, truncated };
+  return { isNew, trackCount: storedTracks.length, skippedDuplicates: skipped, truncated };
 }
 
 /**
  * Tambahin track ke playlist yang UDAH ADA (append, bukan timpa). Bikin
  * playlist baru kalau namanya belum ada. Dipakai buat /playlist add & tombol
- * "Add" (nambahin lagu yang lagi diputar) di panel. Sama kayak savePlaylist,
- * `owner` cuma dicatet pas playlist ini BARU dibuat lewat append ini.
+ * "Add"/"Add Antrian" di panel. Sama kayak savePlaylist, `owner` cuma dicatet
+ * pas playlist ini BARU dibuat lewat append ini. Lagu yang linknya UDAH ADA
+ * di playlist ini (atau dobel sesama `newTracks`-nya sendiri) otomatis
+ * dilewatin, nggak ikut disimpan -- makanya playlist nggak akan kena dobel
+ * biar berapa kali pun di-Add.
  */
 function appendToPlaylist(scopeId, name, newTracks, owner) {
   if (!data[scopeId]) data[scopeId] = {};
@@ -116,7 +146,8 @@ function appendToPlaylist(scopeId, name, newTracks, owner) {
   }
 
   const existingTracks = existing?.tracks || [];
-  const combined = [...existingTracks, ...newTracks.map(pickTrackFields)];
+  const { deduped, skipped } = dedupeAgainstExisting(existingTracks, newTracks);
+  const combined = [...existingTracks, ...deduped];
   const truncated = combined.length > MAX_TRACKS_PER_PLAYLIST;
   const storedTracks = combined.slice(0, MAX_TRACKS_PER_PLAYLIST);
 
@@ -126,7 +157,7 @@ function appendToPlaylist(scopeId, name, newTracks, owner) {
     tracks: storedTracks,
   };
   saveSync();
-  return { isNew, trackCount: storedTracks.length, addedCount: newTracks.length, truncated };
+  return { isNew, trackCount: storedTracks.length, addedCount: deduped.length, skippedDuplicates: skipped, truncated };
 }
 
 function getPlaylist(scopeId, name) {
