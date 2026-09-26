@@ -92,15 +92,15 @@ function buildHomeEmbed(client, commandCount) {
 }
 
 /**
- * Tombol-tombol di layar Home: Home (disabled, lagi di sini), Featured
- * (buka daftar fitur), Musik & Bantuan (akses cepat), dan CC (link, bukan
- * bagian dari sistem navigasi 1-embed).
+ * Tombol-tombol di layar Home: Home, Musik, Featured (buka daftar fitur),
+ * Bantuan (akses cepat), dan CC (link, bukan bagian dari sistem navigasi
+ * 1-embed).
  */
 function buildHomeButtons() {
   const row = new ActionRowBuilder().addComponents(
     buildHomeButton(),
-    new ButtonBuilder().setCustomId('panel_featured').setLabel('Featured').setEmoji('✨').setStyle(ButtonStyle.Secondary),
     new ButtonBuilder().setCustomId('panel_music').setLabel('Musik').setEmoji('🎵').setStyle(ButtonStyle.Secondary),
+    new ButtonBuilder().setCustomId('panel_featured').setLabel('Featured').setEmoji('✨').setStyle(ButtonStyle.Secondary),
     new ButtonBuilder().setCustomId('panel_help').setLabel('Bantuan').setEmoji('ℹ️').setStyle(ButtonStyle.Secondary),
     // Tombol Link (bukan customId) -- diklik langsung buka profil Discord
     // pembuat bot, nggak lewat interactionCreate sama sekali.
