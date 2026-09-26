@@ -1479,10 +1479,21 @@ client.on('interactionCreate', async (interaction) => {
     }
 
     // Tombol "Rename" -- munculin modal ganti nama (nama lama dikodein di
-    // customId modal-nya), submit-nya ditangani di blok isModalSubmit() di bawah.
+    // customId modal-nya), submit-nya ditangani di blok isModalSubmit() di
+    // bawah. Playlist-nya SHARED, tapi yang boleh NGGANTI NAMA cuma
+    // pemilik/pembuat playlist itu sendiri (member lain cuma boleh Play).
     if (interaction.customId.startsWith('panelplaylist_rename::')) {
       try {
         const name = interaction.customId.slice('panelplaylist_rename::'.length);
+        const hasManageGuild = !!interaction.memberPermissions?.has(PermissionFlagsBits.ManageGuild);
+        const check = musicPlaylistStore.canDelete(interaction.guildId, name, interaction.user.id, hasManageGuild);
+        if (!check.allowed) {
+          await interaction.reply({
+            content: musicPlaylistCommands.buildRenameDenialMessage(name, check),
+            flags: MessageFlags.Ephemeral,
+          });
+          return;
+        }
         await interaction.showModal(musicPlaylistCommands.buildRenameModal(name));
       } catch (err) {
         log(`[PANEL] Error tombol panelplaylist_rename: ${err?.stack || err}`);
@@ -1805,7 +1816,9 @@ client.on('interactionCreate', async (interaction) => {
           await respondPanelScreen(interaction, overviewEmbed, components);
           return;
         }
-        await respondPanelScreen(interaction, detailEmbed, musicPlaylistCommands.buildPlaylistDetailButtons(name));
+        const hasManageGuildPl = !!interaction.memberPermissions?.has(PermissionFlagsBits.ManageGuild);
+        const canManage = musicPlaylistStore.canDelete(interaction.guildId, name, interaction.user.id, hasManageGuildPl).allowed;
+        await respondPanelScreen(interaction, detailEmbed, musicPlaylistCommands.buildPlaylistDetailButtons(name, canManage));
       } catch (err) {
         log(`[PANEL] Error dropdown panelplaylist_select: ${err?.stack || err}`);
       }
