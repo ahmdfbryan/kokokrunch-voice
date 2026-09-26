@@ -373,6 +373,13 @@ async function executeTool(toolName, args, ctx) {
       case 'delete_playlist': {
         const name = String(args?.name || '').trim();
         if (!name) return { success: false, message: 'Nama playlist nggak boleh kosong.' };
+        // Playlist-nya SHARED (bisa dilihat & dipakai semua member server),
+        // jadi yang boleh ngehapus SELURUH playlist dibatesin ke yang punya
+        // izin Manage Server aja -- gerbang izin yang sama kayak /playlist delete.
+        const allowed = await permissions.canManageGuildByUserId(client, guildId, userId);
+        if (!allowed) {
+          return { success: false, message: 'Cuma yang punya izin Manage Server yang bisa hapus playlist server ini.' };
+        }
         const deleted = playlistStore.deletePlaylist(guildId, name);
         return { success: deleted, message: deleted ? `Playlist "${name}" dihapus.` : `Playlist "${name}" nggak ketemu.` };
       }
