@@ -6,6 +6,9 @@ const {
   ButtonBuilder,
   ButtonStyle,
   StringSelectMenuBuilder,
+  ModalBuilder,
+  TextInputBuilder,
+  TextInputStyle,
 } = require('discord.js');
 const musicManager = require('./musicManager');
 const playlistStore = require('./musicPlaylistStore');
@@ -40,19 +43,20 @@ function normalizeName(raw) {
 const MAX_TRACKS_SHOWN_IN_DETAIL = 20;
 
 /**
- * Embed overview SEMUA playlist tersimpan milik 1 user -- dipakai di layar
- * "Playlist" pas tombol Playlist di panel (Kontrol Musik) diklik. Nampilin
- * jumlah lagu & total durasi tiap playlist sebagai overview aja (bukan isi
- * lagunya -- itu ada di buildPlaylistDetailEmbed pas salah satu playlist
- * dipilih dari dropdown).
+ * Embed overview SEMUA playlist tersimpan di SERVER ini -- dipakai di layar
+ * "Playlist" pas tombol Playlist di panel (Kontrol Musik) diklik. Playlist
+ * di-scope per GUILD (bukan per user), jadi semua member server bisa lihat
+ * & pakai playlist yang sama. Nampilin jumlah lagu & total durasi tiap
+ * playlist sebagai overview aja (bukan isi lagunya -- itu ada di
+ * buildPlaylistDetailEmbed pas salah satu playlist dipilih dari dropdown).
  */
-function buildPlaylistOverviewEmbed(userId) {
-  const playlists = playlistStore.listPlaylists(userId);
-  const embed = new EmbedBuilder().setColor(COLOR).setAuthor({ name: '📁  Playlist Kamu' });
+function buildPlaylistOverviewEmbed(guildId) {
+  const playlists = playlistStore.listPlaylists(guildId);
+  const embed = new EmbedBuilder().setColor(COLOR).setAuthor({ name: '📁  Playlist Server' });
 
   if (playlists.length === 0) {
     embed.setDescription(
-      'Kamu belum punya playlist tersimpan.\n\nSimpan antrian musik yang lagi jalan jadi playlist dulu pakai `/playlist save`.'
+      'Server ini belum punya playlist tersimpan.\n\nSimpan antrian musik yang lagi jalan jadi playlist dulu pakai `/playlist save`.'
     );
     return embed;
   }
@@ -60,18 +64,20 @@ function buildPlaylistOverviewEmbed(userId) {
   const lines = playlists.map(
     (p, i) => `${i + 1}. **${p.name}** — ${p.trackCount} lagu (${formatDurationLong(p.totalSeconds)})`
   );
-  embed.setDescription([...lines, '', 'Pilih salah satu di dropdown bawah buat liat isi & muterinnya.'].join('\n'));
+  embed.setDescription(
+    [...lines, '', 'Pilih salah satu di dropdown bawah buat liat isi, muterin, atau kelola playlist-nya.'].join('\n')
+  );
   return embed;
 }
 
 /**
  * Dropdown pilihan playlist buat dilihat/diputar. Batasnya ngikutin
- * MAX_PLAYLISTS_PER_USER (25), pas banget sama limit maksimal option select
- * menu Discord. Return null kalau user belum punya playlist sama sekali,
+ * MAX_PLAYLISTS_PER_GUILD (25), pas banget sama limit maksimal option select
+ * menu Discord. Return null kalau server belum punya playlist sama sekali,
  * biar nggak render select menu kosong (Discord bakal nolak itu).
  */
-function buildPlaylistSelectRow(userId) {
-  const playlists = playlistStore.listPlaylists(userId);
+function buildPlaylistSelectRow(guildId) {
+  const playlists = playlistStore.listPlaylists(guildId);
   if (playlists.length === 0) return null;
 
   const menu = new StringSelectMenuBuilder()
@@ -93,8 +99,8 @@ function buildPlaylistSelectRow(userId) {
  * biar description-nya nggak kepanjangan). Return null kalau playlist-nya
  * ternyata udah nggak ada lagi (misal kehapus barengan lewat /playlist delete).
  */
-function buildPlaylistDetailEmbed(userId, name) {
-  const tracks = playlistStore.getPlaylist(userId, name);
+function buildPlaylistDetailEmbed(guildId, name) {
+  const tracks = playlistStore.getPlaylist(guildId, name);
   if (!tracks) return null;
 
   const totalSeconds = tracks.reduce((sum, t) => sum + (t.durationSeconds || 0), 0);
@@ -110,13 +116,24 @@ function buildPlaylistDetailEmbed(userId, name) {
     .setDescription([`**${tracks.length}** lagu • **${formatDurationLong(totalSeconds)}**`, '', ...trackLines].join('\n'));
 }
 
-/** Tombol Play (nama playlist dikodein di customId) + Back (ke Musik) + Home di layar detail playlist. */
+/**
+ * Tombol-tombol di layar detail playlist -- 6 tombol (Play, Add, Rename,
+ * Delete, Back, Home) dibagi rata 3-3 biar nggak nabrak limit 5/baris.
+ * Nama playlist-nya dikodein di tiap customId (`::<nama>`) biar handler-nya
+ * di index.js tau lagi ngurusin playlist yang mana.
+ */
 function buildPlaylistDetailButtons(name) {
-  return new ActionRowBuilder().addComponents(
+  const row1 = new ActionRowBuilder().addComponents(
     new ButtonBuilder().setCustomId(`panelplaylist_play::${name}`).setLabel('Play').setEmoji('▶️').setStyle(ButtonStyle.Secondary),
+    new ButtonBuilder().setCustomId(`panelplaylist_add::${name}`).setLabel('Add').setEmoji('➕').setStyle(ButtonStyle.Secondary),
+    new ButtonBuilder().setCustomId(`panelplaylist_rename::${name}`).setLabel('Rename').setEmoji('✏️').setStyle(ButtonStyle.Secondary)
+  );
+  const row2 = new ActionRowBuilder().addComponents(
+    new ButtonBuilder().setCustomId(`panelplaylist_delete::${name}`).setLabel('Delete').setEmoji('🗑️').setStyle(ButtonStyle.Danger),
     buildBackButton('panel_music'),
     buildHomeButton()
   );
+  return [row1, row2];
 }
 
 /**
@@ -127,7 +144,7 @@ function buildPlaylistDetailButtons(name) {
  * publik ke channel kalau langsung mulai muter.
  */
 async function playPlaylistForPanel(interaction, name) {
-  const tracks = playlistStore.getPlaylist(interaction.user.id, name);
+  const tracks = playlistStore.getPlaylist(interaction.guildId, name);
   if (!tracks || tracks.length === 0) {
     await interaction.reply({ embeds: [textEmbed(`Playlist **${name}** nggak ketemu.`)], flags: MessageFlags.Ephemeral });
     return;
@@ -149,10 +166,74 @@ async function playPlaylistForPanel(interaction, name) {
   }
 }
 
+/**
+ * Tombol "Add" di layar detail playlist -- nambahin lagu yang LAGI DIPUTAR
+ * sekarang ke playlist yang lagi dibuka. Ephemeral ack, nggak nge-update
+ * layar panel (konsisten sama tombol leaf lain kayak Skip/Stop/Set Username).
+ */
+async function addCurrentTrackToPlaylist(interaction, name) {
+  const queue = musicManager.getQueue(interaction.guildId);
+  const current = queue.current;
+  if (!current) {
+    await interaction.reply({
+      embeds: [textEmbed('Nggak ada lagu yang lagi diputar buat ditambahin ke playlist.')],
+      flags: MessageFlags.Ephemeral,
+    });
+    return;
+  }
+
+  const result = playlistStore.appendToPlaylist(interaction.guildId, name, [current]);
+  await interaction.reply({
+    embeds: [
+      textEmbed(`**${current.title}** ditambahin ke playlist **${name}** (total sekarang: ${result.trackCount} lagu).`),
+    ],
+    flags: MessageFlags.Ephemeral,
+  });
+}
+
+/** Modal ganti nama playlist -- nama lama dikodein di customId modalnya, input-nya di-prefill sama nama lama. */
+function buildRenameModal(name) {
+  const modal = new ModalBuilder().setCustomId(`panelplaylist_rename_modal::${name}`).setTitle('Ganti Nama Playlist');
+  const nameInput = new TextInputBuilder()
+    .setCustomId('panelplaylist_new_name')
+    .setLabel('Nama Baru')
+    .setStyle(TextInputStyle.Short)
+    .setRequired(true)
+    .setMaxLength(MAX_NAME_LEN)
+    .setPlaceholder('misal: Lagu Santai');
+  if (typeof nameInput.setValue === 'function') nameInput.setValue(name);
+  modal.addComponents(new ActionRowBuilder().addComponents(nameInput));
+  return modal;
+}
+
+/** Handler submit modal rename -- validasi nama baru & panggil playlistStore.renamePlaylist. */
+async function handleRenameModalSubmit(interaction, oldName) {
+  const newName = normalizeName(interaction.fields.getTextInputValue('panelplaylist_new_name') || '');
+  if (!newName) {
+    await interaction.reply({ content: 'Nama playlist nggak boleh kosong.', flags: MessageFlags.Ephemeral });
+    return;
+  }
+
+  const result = playlistStore.renamePlaylist(interaction.guildId, oldName, newName);
+  if (!result.ok) {
+    const msg =
+      result.reason === 'name_taken'
+        ? `Playlist **${newName}** udah ada, pilih nama lain.`
+        : `Playlist **${oldName}** nggak ketemu (mungkin udah kehapus).`;
+    await interaction.reply({ embeds: [textEmbed(msg)], flags: MessageFlags.Ephemeral });
+    return;
+  }
+
+  await interaction.reply({
+    embeds: [textEmbed(`✅ Playlist **${oldName}** diganti nama jadi **${newName}**.`)],
+    flags: MessageFlags.Ephemeral,
+  });
+}
+
 const playlistCommand = {
   data: new SlashCommandBuilder()
     .setName('playlist')
-    .setDescription('Kelola playlist musik kamu')
+    .setDescription('Kelola playlist musik server ini (bisa dipakai & dilihat semua member)')
     .addSubcommand((sub) =>
       sub
         .setName('save')
@@ -193,7 +274,7 @@ const playlistCommand = {
           opt.setName('nama').setDescription('Nama playlist').setRequired(true).setAutocomplete(true)
         )
     )
-    .addSubcommand((sub) => sub.setName('list').setDescription('Lihat semua playlist kamu'))
+    .addSubcommand((sub) => sub.setName('list').setDescription('Lihat semua playlist server ini'))
     .addSubcommand((sub) =>
       sub
         .setName('delete')
@@ -205,7 +286,7 @@ const playlistCommand = {
 
   async autocomplete(interaction) {
     const focused = interaction.options.getFocused().toLowerCase();
-    const playlists = playlistStore.listPlaylists(interaction.user.id);
+    const playlists = playlistStore.listPlaylists(interaction.guildId);
     const filtered = playlists
       .filter((p) => p.name.toLowerCase().includes(focused))
       .slice(0, 25)
@@ -248,7 +329,7 @@ const playlistCommand = {
 
       let result;
       try {
-        result = playlistStore.savePlaylist(interaction.user.id, name, tracks);
+        result = playlistStore.savePlaylist(interaction.guildId, name, tracks);
       } catch (err) {
         await interaction.reply({ embeds: [textEmbed(err.message)], flags: MessageFlags.Ephemeral });
         return;
@@ -312,7 +393,7 @@ const playlistCommand = {
 
       let result;
       try {
-        result = playlistStore.appendToPlaylist(interaction.user.id, name, resolvedTracks);
+        result = playlistStore.appendToPlaylist(interaction.guildId, name, resolvedTracks);
       } catch (err) {
         await interaction.editReply({ embeds: [textEmbed(err.message)] });
         return;
@@ -329,7 +410,7 @@ const playlistCommand = {
 
     if (sub === 'play') {
       const name = interaction.options.getString('nama', true);
-      const tracks = playlistStore.getPlaylist(interaction.user.id, name);
+      const tracks = playlistStore.getPlaylist(interaction.guildId, name);
       if (!tracks || tracks.length === 0) {
         await interaction.reply({ embeds: [textEmbed(`Playlist **${name}** nggak ketemu.`)], flags: MessageFlags.Ephemeral });
         return;
@@ -353,22 +434,22 @@ const playlistCommand = {
     }
 
     if (sub === 'list') {
-      const playlists = playlistStore.listPlaylists(interaction.user.id);
+      const playlists = playlistStore.listPlaylists(interaction.guildId);
       if (playlists.length === 0) {
-        await interaction.reply({ embeds: [textEmbed('Kamu belum punya playlist tersimpan.')], flags: MessageFlags.Ephemeral });
+        await interaction.reply({ embeds: [textEmbed('Server ini belum punya playlist tersimpan.')], flags: MessageFlags.Ephemeral });
         return;
       }
       const lines = playlists.map(
         (p, i) => `${i + 1}. **${p.name}** — ${p.trackCount} lagu (${formatDurationLong(p.totalSeconds)})`
       );
-      const embed = new EmbedBuilder().setColor(COLOR).setTitle('Playlist Kamu').setDescription(lines.join('\n'));
+      const embed = new EmbedBuilder().setColor(COLOR).setTitle('Playlist Server').setDescription(lines.join('\n'));
       await interaction.reply({ embeds: [embed], flags: MessageFlags.Ephemeral });
       return;
     }
 
     if (sub === 'delete') {
       const name = interaction.options.getString('nama', true);
-      const deleted = playlistStore.deletePlaylist(interaction.user.id, name);
+      const deleted = playlistStore.deletePlaylist(interaction.guildId, name);
       if (!deleted) {
         await interaction.reply({ embeds: [textEmbed(`Playlist **${name}** nggak ketemu.`)], flags: MessageFlags.Ephemeral });
         return;
@@ -385,3 +466,6 @@ module.exports.buildPlaylistSelectRow = buildPlaylistSelectRow;
 module.exports.buildPlaylistDetailEmbed = buildPlaylistDetailEmbed;
 module.exports.buildPlaylistDetailButtons = buildPlaylistDetailButtons;
 module.exports.playPlaylistForPanel = playPlaylistForPanel;
+module.exports.addCurrentTrackToPlaylist = addCurrentTrackToPlaylist;
+module.exports.buildRenameModal = buildRenameModal;
+module.exports.handleRenameModalSubmit = handleRenameModalSubmit;
