@@ -4,8 +4,13 @@ const path = require('path');
 const DATA_DIR = path.join(__dirname, 'data');
 const DATA_PATH = path.join(DATA_DIR, 'panels.json');
 
-// { [channelId]: { panelMessageId } } -- satu panel per channel, diaktifkan
-// manual lewat /panel (mirip pola sticky message).
+// { [channelId]: { panelMessageId, screen } } -- satu panel per channel,
+// diaktifkan manual lewat /panel (mirip pola sticky message). `screen`
+// nyimpen SNAPSHOT (embed + components, hasil .toJSON()) dari layar panel
+// yang lagi kebuka (Featured, Streak, Musik, dst) -- null kalau lagi di
+// Panel Utama (Home). Dipakai pas reposisi panel (chat rame -> panel
+// dikirim ulang di bawah) biar user nggak ke-reset balik ke Home tiap kali
+// ada chat baru, tetep di layar yang lagi mereka buka.
 let data = {};
 
 function load() {
@@ -24,7 +29,7 @@ function saveSync() {
 }
 
 function setPanel(channelId) {
-  data[channelId] = { panelMessageId: null };
+  data[channelId] = { panelMessageId: null, screen: null };
   saveSync();
 }
 
@@ -45,4 +50,19 @@ function setPanelMessageId(channelId, messageId) {
   saveSync();
 }
 
-module.exports = { load, setPanel, removePanel, getPanel, setPanelMessageId };
+/**
+ * Simpan snapshot layar panel yang lagi kebuka di channel ini (atau null
+ * buat nandain "lagi di Home", yang sengaja NGGAK disnapshot biar stats-nya
+ * -- uptime/ping -- tetep fresh tiap kali panel direposisi/dikirim ulang).
+ */
+function setPanelScreen(channelId, screen) {
+  if (!data[channelId]) return;
+  data[channelId].screen = screen;
+  saveSync();
+}
+
+function getPanelScreen(channelId) {
+  return data[channelId]?.screen || null;
+}
+
+module.exports = { load, setPanel, removePanel, getPanel, setPanelMessageId, setPanelScreen, getPanelScreen };
