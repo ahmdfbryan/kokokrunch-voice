@@ -294,10 +294,9 @@ async function executeTool(toolName, args, ctx) {
           return { success: false, message: musicPlaylistCommands.buildAddDenialMessage(name, modifyCheck) };
         }
         const result = playlistStore.savePlaylist(guildId, name, tracks, { id: userId, tag: userTag });
-        return {
-          success: true,
-          message: `Playlist "${name}" ${result.isNew ? 'disimpan' : 'diupdate'} (${result.trackCount} lagu).`,
-        };
+        let saveMessage = `Playlist "${name}" ${result.isNew ? 'disimpan' : 'diupdate'} (${result.trackCount} lagu).`;
+        if (result.skippedDuplicates > 0) saveMessage += ` ${result.skippedDuplicates} lagu dilewatin karena dobel (link sama).`;
+        return { success: true, message: saveMessage };
       }
 
       case 'play_playlist': {
@@ -376,7 +375,8 @@ async function executeTool(toolName, args, ctx) {
         if (resolvedTracks.length === 0) return { success: false, message: 'Nggak ada satupun link yang berhasil diproses.' };
 
         const result = playlistStore.appendToPlaylist(guildId, name, resolvedTracks, { id: userId, tag: userTag });
-        let message = `${resolvedTracks.length} lagu ditambahkan ke playlist "${name}" (total sekarang: ${result.trackCount} lagu).`;
+        let message = `${result.addedCount} lagu ditambahkan ke playlist "${name}" (total sekarang: ${result.trackCount} lagu).`;
+        if (result.skippedDuplicates > 0) message += ` ${result.skippedDuplicates} lagu dilewatin karena udah ada di playlist ini (dobel).`;
         if (failedCount > 0) message += ` ${failedCount} link gagal diproses.`;
         return { success: true, message };
       }
