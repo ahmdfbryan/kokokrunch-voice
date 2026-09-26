@@ -170,7 +170,7 @@ function buildPlaylistDetailButtons(name, canManage) {
   const row2 = new ActionRowBuilder().addComponents(
     new ButtonBuilder()
       .setCustomId(`panelplaylist_deletetrack::${name}`)
-      .setLabel('Hapus Lagu')
+      .setLabel('Hapus')
       .setEmoji('🗑️')
       .setStyle(ButtonStyle.Danger)
       .setDisabled(!canManage),
