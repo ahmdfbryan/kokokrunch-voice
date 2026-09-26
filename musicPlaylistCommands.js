@@ -435,8 +435,19 @@ function buildDeleteTrackModal(name) {
  * baru panggil playlistStore.removeTrackAt. Pengecekan pemilik diulang di
  * sini (bukan cuma di tombol yang munculin modalnya) buat jaga-jaga kalau
  * ada yang manggil submit modal ini langsung tanpa lewat tombol.
+ *
+ * BEDA dari modal submit lain di file ini: begitu lagunya BENERAN kehapus,
+ * layar panel-nya (embed detail playlist yang lagi kebuka) langsung di-
+ * REFRESH di tempat (`interaction.update()`) biar daftar lagunya kelihatan
+ * update tanpa pengguna harus buka ulang dari dropdown. Jalur gagal/ditolak
+ * (bukan pemilik, nomor invalid/nggak ketemu) tetep balesnya pakai ephemeral
+ * reply biasa (nggak ada yang perlu di-refresh karena playlist-nya nggak
+ * berubah). `onScreenUpdated(embed, components)` -- kalau dikasih -- dipanggil
+ * abis update berhasil, dipakai caller (index.js) buat nyimpen snapshot layar
+ * panel yang baru (biar reposisi panel nanti tetep nampilin versi ter-update,
+ * bukan versi lama sebelum dihapus).
  */
-async function handleDeleteTrackModalSubmit(interaction, name) {
+async function handleDeleteTrackModalSubmit(interaction, name, onScreenUpdated) {
   const hasManageGuild = !!interaction.memberPermissions?.has(PermissionFlagsBits.ManageGuild);
   const check = playlistStore.canDelete(interaction.guildId, name, interaction.user.id, hasManageGuild);
   if (!check.allowed) {
@@ -464,12 +475,15 @@ async function handleDeleteTrackModalSubmit(interaction, name) {
     return;
   }
 
-  await interaction.reply({
-    embeds: [
-      textEmbed(`🗑️ **${result.removedTitle}** dihapus dari playlist **${name}** (sisa ${result.trackCount} lagu).`),
-    ],
-    flags: MessageFlags.Ephemeral,
-  });
+  // Beneran kehapus -- refresh embed detail playlist-nya di tempat, biar
+  // daftar lagunya langsung keliatan yang baru (tanpa lagu yang barusan
+  // dihapus), bukan cuma ngasih ephemeral ack doang.
+  const updatedEmbed = buildPlaylistDetailEmbed(interaction.guildId, name);
+  const updatedComponents = buildPlaylistDetailButtons(name, check.allowed);
+  await interaction.update({ embeds: [updatedEmbed], components: updatedComponents });
+  if (typeof onScreenUpdated === 'function') {
+    onScreenUpdated(updatedEmbed, updatedComponents);
+  }
 }
 
 /** Modal ganti nama playlist -- nama lama dikodein di customId modalnya, input-nya di-prefill sama nama lama. */
