@@ -321,6 +321,9 @@ async function cmdPlaylist(message, args, rest) {
 
     const verb = result.isNew ? 'disimpan' : 'diupdate';
     let msg = `Playlist **${name}** ${verb} (${result.trackCount} lagu).`;
+    if (result.skippedDuplicates > 0) {
+      msg += ` ${result.skippedDuplicates} lagu dilewatin karena dobel (link sama).`;
+    }
     if (result.truncated) {
       msg += `\n\nCatatan: lebih dari ${playlistStore.MAX_TRACKS_PER_PLAYLIST} lagu, cuma ${playlistStore.MAX_TRACKS_PER_PLAYLIST} lagu pertama yang disimpan.`;
     }
@@ -380,7 +383,8 @@ async function cmdPlaylist(message, args, rest) {
       return;
     }
 
-    let msg = `${resolvedTracks.length} lagu ditambahkan ke playlist **${name}** (total sekarang: ${result.trackCount} lagu).`;
+    let msg = `${result.addedCount} lagu ditambahkan ke playlist **${name}** (total sekarang: ${result.trackCount} lagu).`;
+    if (result.skippedDuplicates > 0) msg += ` ${result.skippedDuplicates} lagu dilewatin karena udah ada di playlist ini (dobel).`;
     if (failedCount > 0) msg += `\n\n${failedCount} link gagal diproses dan dilewati.`;
     if (result.truncated) msg += `\n\nPlaylist udah kena batas maksimal ${playlistStore.MAX_TRACKS_PER_PLAYLIST} lagu.`;
     await message.channel.send({ embeds: [textEmbed(msg)] });
