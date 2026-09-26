@@ -300,7 +300,7 @@ async function cmdPlaylist(message, args, rest) {
 
     let result;
     try {
-      result = playlistStore.savePlaylist(message.author.id, name, tracks);
+      result = playlistStore.savePlaylist(message.guild.id, name, tracks);
     } catch (err) {
       await message.channel.send({ embeds: [textEmbed(err.message)] });
       return;
@@ -347,7 +347,7 @@ async function cmdPlaylist(message, args, rest) {
 
     let result;
     try {
-      result = playlistStore.appendToPlaylist(message.author.id, normalizeName(name), resolvedTracks);
+      result = playlistStore.appendToPlaylist(message.guild.id, normalizeName(name), resolvedTracks);
     } catch (err) {
       await message.channel.send({ embeds: [textEmbed(err.message)] });
       return;
@@ -366,7 +366,7 @@ async function cmdPlaylist(message, args, rest) {
       await message.channel.send({ embeds: [textEmbed(`Gunakan: \`${PREFIX}playlist play <nama>\``)] });
       return;
     }
-    const tracks = playlistStore.getPlaylist(message.author.id, name);
+    const tracks = playlistStore.getPlaylist(message.guild.id, name);
     if (!tracks || tracks.length === 0) {
       await message.channel.send({ embeds: [textEmbed(`Playlist **${name}** nggak ketemu.`)] });
       return;
@@ -390,15 +390,15 @@ async function cmdPlaylist(message, args, rest) {
   }
 
   if (sub === 'list') {
-    const playlists = playlistStore.listPlaylists(message.author.id);
+    const playlists = playlistStore.listPlaylists(message.guild.id);
     if (playlists.length === 0) {
-      await message.channel.send({ embeds: [textEmbed('Kamu belum punya playlist tersimpan.')] });
+      await message.channel.send({ embeds: [textEmbed('Server ini belum punya playlist tersimpan.')] });
       return;
     }
     const lines = playlists.map(
       (p, i) => `${i + 1}. **${p.name}** — ${p.trackCount} lagu (${formatDurationLong(p.totalSeconds)})`
     );
-    const embed = new EmbedBuilder().setColor(COLOR).setTitle('Playlist Kamu').setDescription(lines.join('\n'));
+    const embed = new EmbedBuilder().setColor(COLOR).setTitle('Playlist Server').setDescription(lines.join('\n'));
     await message.channel.send({ embeds: [embed] });
     return;
   }
@@ -409,7 +409,7 @@ async function cmdPlaylist(message, args, rest) {
       await message.channel.send({ embeds: [textEmbed(`Gunakan: \`${PREFIX}playlist delete <nama>\``)] });
       return;
     }
-    const deleted = playlistStore.deletePlaylist(message.author.id, name);
+    const deleted = playlistStore.deletePlaylist(message.guild.id, name);
     await message.channel.send({
       embeds: [textEmbed(deleted ? `Playlist **${name}** dihapus.` : `Playlist **${name}** nggak ketemu.`)],
     });
