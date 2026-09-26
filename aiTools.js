@@ -285,6 +285,14 @@ async function executeTool(toolName, args, ctx) {
         }
         const name = String(args?.name || '').trim().slice(0, 50);
         if (!name) return { success: false, message: 'Nama playlist nggak boleh kosong.' };
+        // Nama BARU selalu boleh; kalau namanya udah dipakai playlist yang
+        // ADA, cuma pemiliknya yang boleh nimpa isinya.
+        const hasManageGuildSave = await permissions.canManageGuildByUserId(client, guildId, userId);
+        const modifyCheck = playlistStore.canModify(guildId, name, userId, hasManageGuildSave);
+        if (!modifyCheck.allowed) {
+          const musicPlaylistCommands = require('./musicPlaylistCommands');
+          return { success: false, message: musicPlaylistCommands.buildAddDenialMessage(name, modifyCheck) };
+        }
         const result = playlistStore.savePlaylist(guildId, name, tracks, { id: userId, tag: userTag });
         return {
           success: true,
@@ -340,6 +348,16 @@ async function executeTool(toolName, args, ctx) {
         if (!name) return { success: false, message: 'Nama playlist nggak boleh kosong.' };
         const links = Array.isArray(args?.links) ? args.links : [];
         if (links.length === 0) return { success: false, message: 'Nggak ada link yang disebutin.' };
+
+        // Nama BARU selalu boleh; kalau namanya udah dipakai playlist yang
+        // ADA, cuma pemiliknya yang boleh nambahin lagu ke situ. Dicek
+        // duluan biar nggak buang-buang waktu resolve link kalau ditolak.
+        const hasManageGuildAdd = await permissions.canManageGuildByUserId(client, guildId, userId);
+        const modifyCheck = playlistStore.canModify(guildId, name, userId, hasManageGuildAdd);
+        if (!modifyCheck.allowed) {
+          const musicPlaylistCommands = require('./musicPlaylistCommands');
+          return { success: false, message: musicPlaylistCommands.buildAddDenialMessage(name, modifyCheck) };
+        }
 
         const resolvedTracks = [];
         let failedCount = 0;
