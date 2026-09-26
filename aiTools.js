@@ -285,7 +285,7 @@ async function executeTool(toolName, args, ctx) {
         }
         const name = String(args?.name || '').trim().slice(0, 50);
         if (!name) return { success: false, message: 'Nama playlist nggak boleh kosong.' };
-        const result = playlistStore.savePlaylist(guildId, name, tracks);
+        const result = playlistStore.savePlaylist(guildId, name, tracks, { id: userId, tag: userTag });
         return {
           success: true,
           message: `Playlist "${name}" ${result.isNew ? 'disimpan' : 'diupdate'} (${result.trackCount} lagu).`,
@@ -357,7 +357,7 @@ async function executeTool(toolName, args, ctx) {
         }
         if (resolvedTracks.length === 0) return { success: false, message: 'Nggak ada satupun link yang berhasil diproses.' };
 
-        const result = playlistStore.appendToPlaylist(guildId, name, resolvedTracks);
+        const result = playlistStore.appendToPlaylist(guildId, name, resolvedTracks, { id: userId, tag: userTag });
         let message = `${resolvedTracks.length} lagu ditambahkan ke playlist "${name}" (total sekarang: ${result.trackCount} lagu).`;
         if (failedCount > 0) message += ` ${failedCount} link gagal diproses.`;
         return { success: true, message };
@@ -374,11 +374,14 @@ async function executeTool(toolName, args, ctx) {
         const name = String(args?.name || '').trim();
         if (!name) return { success: false, message: 'Nama playlist nggak boleh kosong.' };
         // Playlist-nya SHARED (bisa dilihat & dipakai semua member server),
-        // jadi yang boleh ngehapus SELURUH playlist dibatesin ke yang punya
-        // izin Manage Server aja -- gerbang izin yang sama kayak /playlist delete.
-        const allowed = await permissions.canManageGuildByUserId(client, guildId, userId);
-        if (!allowed) {
-          return { success: false, message: 'Cuma yang punya izin Manage Server yang bisa hapus playlist server ini.' };
+        // tapi yang boleh NGEHAPUS-nya cuma pemilik/pembuat aslinya --
+        // gerbang izin yang sama kayak /playlist delete. Playlist "yatim"
+        // (dibuat sebelum fitur ini ada) fallback ke izin Manage Server.
+        const hasManageGuild = await permissions.canManageGuildByUserId(client, guildId, userId);
+        const check = playlistStore.canDelete(guildId, name, userId, hasManageGuild);
+        if (!check.allowed) {
+          const musicPlaylistCommands = require('./musicPlaylistCommands');
+          return { success: false, message: musicPlaylistCommands.buildDeleteDenialMessage(name, check) };
         }
         const deleted = playlistStore.deletePlaylist(guildId, name);
         return { success: deleted, message: deleted ? `Playlist "${name}" dihapus.` : `Playlist "${name}" nggak ketemu.` };
