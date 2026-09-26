@@ -160,6 +160,23 @@ function canDelete(scopeId, name, userId, hasManageGuild) {
   return { allowed: !!hasManageGuild, reason: 'orphaned', owner };
 }
 
+/**
+ * Cek apakah `userId` boleh NGUBAH playlist ini -- rename, nambahin lagu
+ * (append), atau nimpa isinya (save ulang pakai nama yang sama). Aturannya
+ * sama kayak `canDelete` (cuma pemilik, playlist "yatim" fallback ke
+ * `hasManageGuild`), BEDANYA: kalau playlist-nya BELUM ADA sama sekali, itu
+ * dianggap BOLEH -- soalnya berarti lagi bikin playlist BARU, dan yang bikin
+ * otomatis jadi pemiliknya (lewat `savePlaylist`/`appendToPlaylist`).
+ */
+function canModify(scopeId, name, userId, hasManageGuild) {
+  const owner = getPlaylistOwner(scopeId, name);
+  if (!owner) return { allowed: true, reason: 'new', owner: null };
+  if (owner.ownerId) {
+    return { allowed: owner.ownerId === userId, reason: 'not_owner', owner };
+  }
+  return { allowed: !!hasManageGuild, reason: 'orphaned', owner };
+}
+
 function listPlaylists(scopeId) {
   const playlists = data[scopeId] || {};
   return Object.entries(playlists).map(([name, entry]) => ({
@@ -226,6 +243,7 @@ module.exports = {
   getPlaylist,
   getPlaylistOwner,
   canDelete,
+  canModify,
   listPlaylists,
   deletePlaylist,
   removeTrackAt,
