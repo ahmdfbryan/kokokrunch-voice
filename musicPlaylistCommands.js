@@ -11,7 +11,7 @@ const musicManager = require('./musicManager');
 const playlistStore = require('./musicPlaylistStore');
 const trackResolver = require('./trackResolver');
 const { claimNowPlayingCard } = require('./nowPlayingCard');
-const { buildHomeButton } = require('./panelCard');
+const { buildHomeButton, buildBackButton } = require('./panelCard');
 
 const COLOR = 0x5865f2;
 const MAX_NAME_LEN = 50;
@@ -110,10 +110,11 @@ function buildPlaylistDetailEmbed(userId, name) {
     .setDescription([`**${tracks.length}** lagu • **${formatDurationLong(totalSeconds)}**`, '', ...trackLines].join('\n'));
 }
 
-/** Tombol Play (nama playlist dikodein di customId) + Home di layar detail playlist. */
+/** Tombol Play (nama playlist dikodein di customId) + Back (ke Musik) + Home di layar detail playlist. */
 function buildPlaylistDetailButtons(name) {
   return new ActionRowBuilder().addComponents(
     new ButtonBuilder().setCustomId(`panelplaylist_play::${name}`).setLabel('Play').setEmoji('▶️').setStyle(ButtonStyle.Secondary),
+    buildBackButton('panel_music'),
     buildHomeButton()
   );
 }
