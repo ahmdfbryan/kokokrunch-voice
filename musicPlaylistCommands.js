@@ -107,8 +107,8 @@ function buildPlaylistDetailEmbed(guildId, name) {
 
   const owner = playlistStore.getPlaylistOwner(guildId, name);
   const ownerLine = owner?.ownerTag
-    ? `Dibuat oleh **${owner.ownerTag}** — cuma dia (atau yang punya izin Manage Server) yang bisa hapus.`
-    : 'Dibuat sebelum fitur "pemilik playlist" ada — cuma yang punya izin Manage Server yang bisa hapus.';
+    ? `Dibuat oleh **${owner.ownerTag}** — cuma dia yang bisa Add/Rename/Hapus, yang lain cuma bisa Play.`
+    : 'Dibuat sebelum fitur "pemilik playlist" ada — cuma yang punya izin Manage Server yang bisa Add/Rename/Hapus.';
 
   const totalSeconds = tracks.reduce((sum, t) => sum + (t.durationSeconds || 0), 0);
   const shown = tracks.slice(0, MAX_TRACKS_SHOWN_IN_DETAIL);
@@ -132,15 +132,36 @@ function buildPlaylistDetailEmbed(guildId, name) {
  * di index.js tau lagi ngurusin playlist yang mana. "Hapus Lagu" cuma
  * ngehapus SATU lagu (lewat modal, minta nomor urutnya) -- BUKAN ngehapus
  * seluruh playlist (buat itu, tetep pakai `/playlist delete`).
+ *
+ * `canManage` = boolean (dari `playlistStore.canDelete(...).allowed` yang
+ * manggil) -- kalau `false` (bukan pemilik playlist ini), Add/Rename/Hapus
+ * Lagu ditampilin DISABLED (member itu cuma boleh Play). Server-side tetep
+ * ada pengecekan sendiri di tiap handler-nya (jaga-jaga), ini cuma biar UI-nya
+ * nggak nawarin tombol yang bakal ditolak.
  */
-function buildPlaylistDetailButtons(name) {
+function buildPlaylistDetailButtons(name, canManage) {
   const row1 = new ActionRowBuilder().addComponents(
     new ButtonBuilder().setCustomId(`panelplaylist_play::${name}`).setLabel('Play').setEmoji('▶️').setStyle(ButtonStyle.Secondary),
-    new ButtonBuilder().setCustomId(`panelplaylist_add::${name}`).setLabel('Add').setEmoji('➕').setStyle(ButtonStyle.Secondary),
-    new ButtonBuilder().setCustomId(`panelplaylist_rename::${name}`).setLabel('Rename').setEmoji('✏️').setStyle(ButtonStyle.Secondary)
+    new ButtonBuilder()
+      .setCustomId(`panelplaylist_add::${name}`)
+      .setLabel('Add')
+      .setEmoji('➕')
+      .setStyle(ButtonStyle.Secondary)
+      .setDisabled(!canManage),
+    new ButtonBuilder()
+      .setCustomId(`panelplaylist_rename::${name}`)
+      .setLabel('Rename')
+      .setEmoji('✏️')
+      .setStyle(ButtonStyle.Secondary)
+      .setDisabled(!canManage)
   );
   const row2 = new ActionRowBuilder().addComponents(
-    new ButtonBuilder().setCustomId(`panelplaylist_deletetrack::${name}`).setLabel('Hapus Lagu').setEmoji('🗑️').setStyle(ButtonStyle.Danger),
+    new ButtonBuilder()
+      .setCustomId(`panelplaylist_deletetrack::${name}`)
+      .setLabel('Hapus Lagu')
+      .setEmoji('🗑️')
+      .setStyle(ButtonStyle.Danger)
+      .setDisabled(!canManage),
     buildBackButton('panel_music'),
     buildHomeButton()
   );
@@ -183,6 +204,16 @@ async function playPlaylistForPanel(interaction, name) {
  * layar panel (konsisten sama tombol leaf lain kayak Skip/Stop/Set Username).
  */
 async function addCurrentTrackToPlaylist(interaction, name) {
+  // Playlist ini SHARED (dibuka dari layar detail playlist yang udah ADA),
+  // tapi yang boleh nambahin lagu ke situ cuma pemilik/pembuatnya -- member
+  // lain cuma boleh Play. Playlist "yatim" fallback ke izin Manage Server.
+  const hasManageGuild = !!interaction.memberPermissions?.has(PermissionFlagsBits.ManageGuild);
+  const check = playlistStore.canDelete(interaction.guildId, name, interaction.user.id, hasManageGuild);
+  if (!check.allowed) {
+    await interaction.reply({ embeds: [textEmbed(buildAddDenialMessage(name, check))], flags: MessageFlags.Ephemeral });
+    return;
+  }
+
   const queue = musicManager.getQueue(interaction.guildId);
   const current = queue.current;
   if (!current) {
@@ -206,22 +237,39 @@ async function addCurrentTrackToPlaylist(interaction, name) {
 }
 
 /**
- * Pesan penolakan seragam buat SEMUA jalur hapus playlist (tombol panel,
- * `/playlist delete`, `s!playlist delete`, & lewat AI) -- teksnya beda
- * tergantung alasan: playlist nggak ketemu, bukan pemilik, atau playlist
- * "yatim" (dibuat sebelum fitur pemilik ini ada, perlu izin Manage Server).
+ * Pesan penolakan seragam buat SEMUA aksi yang dibatesin ke pemilik playlist
+ * (hapus, rename, add/nambah lagu -- lewat tombol panel, slash command,
+ * prefix command, atau lewat AI) -- `actionPhrase` ngisi kata kerjanya
+ * (misal "hapus", "ganti nama", "nambahin lagu ke"). Teksnya beda tergantung
+ * alasan: playlist nggak ketemu, bukan pemilik, atau playlist "yatim"
+ * (dibuat sebelum fitur pemilik ini ada, perlu izin Manage Server).
  */
-function buildDeleteDenialMessage(name, check) {
+function buildOwnerDenialMessage(name, check, actionPhrase) {
   if (check.reason === 'not_found') {
     return `Playlist **${name}** nggak ketemu.`;
   }
   if (check.reason === 'orphaned') {
-    return `Playlist **${name}** dibuat sebelum fitur "pemilik playlist" ada -- cuma yang punya izin Manage Server yang bisa hapus playlist ini.`;
+    return `Playlist **${name}** dibuat sebelum fitur "pemilik playlist" ada -- cuma yang punya izin Manage Server yang bisa ${actionPhrase} playlist ini.`;
   }
   const ownerTag = check.owner?.ownerTag;
   return ownerTag
-    ? `Cuma **${ownerTag}** (pemilik/pembuat playlist ini) yang bisa hapus playlist **${name}**.`
-    : `Cuma pemilik/pembuat playlist **${name}** yang bisa menghapusnya.`;
+    ? `Cuma **${ownerTag}** (pemilik/pembuat playlist ini) yang bisa ${actionPhrase} playlist **${name}**. Member lain cuma bisa Play aja.`
+    : `Cuma pemilik/pembuat playlist **${name}** yang bisa ${actionPhrase}nya. Member lain cuma bisa Play aja.`;
+}
+
+/** Pesan penolakan buat aksi HAPUS (whole-playlist maupun 1 lagu). */
+function buildDeleteDenialMessage(name, check) {
+  return buildOwnerDenialMessage(name, check, 'hapus');
+}
+
+/** Pesan penolakan buat aksi GANTI NAMA (rename). */
+function buildRenameDenialMessage(name, check) {
+  return buildOwnerDenialMessage(name, check, 'ganti nama');
+}
+
+/** Pesan penolakan buat aksi NAMBAHIN LAGU (add / save nimpa playlist yang udah ada). */
+function buildAddDenialMessage(name, check) {
+  return buildOwnerDenialMessage(name, check, 'nambahin lagu ke');
 }
 
 /** Modal hapus 1 lagu dari playlist -- minta nomor urut lagunya (liat daftar di layar detail). */
@@ -295,8 +343,20 @@ function buildRenameModal(name) {
   return modal;
 }
 
-/** Handler submit modal rename -- validasi nama baru & panggil playlistStore.renamePlaylist. */
+/**
+ * Handler submit modal rename -- validasi nama baru, cek pemilik playlist,
+ * baru panggil playlistStore.renamePlaylist. Pengecekan pemilik diulang di
+ * sini (bukan cuma di tombol yang munculin modalnya) buat jaga-jaga kalau
+ * ada yang manggil submit modal ini langsung tanpa lewat tombol.
+ */
 async function handleRenameModalSubmit(interaction, oldName) {
+  const hasManageGuild = !!interaction.memberPermissions?.has(PermissionFlagsBits.ManageGuild);
+  const check = playlistStore.canDelete(interaction.guildId, oldName, interaction.user.id, hasManageGuild);
+  if (!check.allowed) {
+    await interaction.reply({ embeds: [textEmbed(buildRenameDenialMessage(oldName, check))], flags: MessageFlags.Ephemeral });
+    return;
+  }
+
   const newName = normalizeName(interaction.fields.getTextInputValue('panelplaylist_new_name') || '');
   if (!newName) {
     await interaction.reply({ content: 'Nama playlist nggak boleh kosong.', flags: MessageFlags.Ephemeral });
@@ -393,6 +453,16 @@ const playlistCommand = {
         return;
       }
 
+      // Nama BARU (belum ada) selalu boleh -- yang nyimpen otomatis jadi
+      // pemiliknya. Tapi kalau namanya udah dipakai playlist yang ADA, cuma
+      // pemiliknya yang boleh nimpa isinya (member lain cuma boleh Play).
+      const hasManageGuildSave = !!interaction.memberPermissions?.has(PermissionFlagsBits.ManageGuild);
+      const modifyCheck = playlistStore.canModify(interaction.guildId, name, interaction.user.id, hasManageGuildSave);
+      if (!modifyCheck.allowed) {
+        await interaction.reply({ embeds: [textEmbed(buildAddDenialMessage(name, modifyCheck))], flags: MessageFlags.Ephemeral });
+        return;
+      }
+
       const fromPosition = interaction.options.getInteger('dari_posisi');
       const queue = musicManager.getQueue(interaction.guildId);
       let tracks = [queue.current, ...queue.tracks].filter(Boolean);
@@ -440,6 +510,18 @@ const playlistCommand = {
       const name = normalizeName(interaction.options.getString('nama', true));
       if (!name) {
         await interaction.reply({ embeds: [textEmbed('Nama playlist nggak boleh kosong.')], flags: MessageFlags.Ephemeral });
+        return;
+      }
+
+      // Nama BARU (belum ada) selalu boleh -- yang nambahin otomatis jadi
+      // pemiliknya. Tapi kalau namanya udah dipakai playlist yang ADA, cuma
+      // pemiliknya yang boleh nambahin lagu ke situ (member lain cuma boleh
+      // Play). Dicek DULUAN sebelum resolve link satu-satu biar nggak
+      // buang-buang waktu kalau bakal ditolak.
+      const hasManageGuildAdd = !!interaction.memberPermissions?.has(PermissionFlagsBits.ManageGuild);
+      const modifyCheck = playlistStore.canModify(interaction.guildId, name, interaction.user.id, hasManageGuildAdd);
+      if (!modifyCheck.allowed) {
+        await interaction.reply({ embeds: [textEmbed(buildAddDenialMessage(name, modifyCheck))], flags: MessageFlags.Ephemeral });
         return;
       }
 
@@ -583,3 +665,5 @@ module.exports.handleRenameModalSubmit = handleRenameModalSubmit;
 module.exports.buildDeleteTrackModal = buildDeleteTrackModal;
 module.exports.handleDeleteTrackModalSubmit = handleDeleteTrackModalSubmit;
 module.exports.buildDeleteDenialMessage = buildDeleteDenialMessage;
+module.exports.buildRenameDenialMessage = buildRenameDenialMessage;
+module.exports.buildAddDenialMessage = buildAddDenialMessage;
