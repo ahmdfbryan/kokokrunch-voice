@@ -1837,12 +1837,20 @@ client.on('interactionCreate', async (interaction) => {
 
     // Submit modal "Hapus Lagu" -- nama playlist dikodein di customId modal-nya
     // (panelplaylist_deletetrack_modal::<nama>), nomor urut lagunya dari input
-    // teksnya. Ephemeral ack biasa (bukan interaction.update()) -- konsisten
-    // sama semua modal submit lain di file ini.
+    // teksnya. BEDA dari modal submit lain: kalau beneran kehapus, layar
+    // panel-nya di-update() di tempat (embed detail playlist di-refresh biar
+    // daftar lagunya langsung keliatan yang baru) -- jalur gagal/ditolak tetep
+    // ephemeral reply biasa. Snapshot layar panel (buat reposisi) ikut
+    // disimpen lewat callback ini, sama kayak yang dilakuin respondPanelScreen.
     if (interaction.customId.startsWith('panelplaylist_deletetrack_modal::')) {
       try {
         const name = interaction.customId.slice('panelplaylist_deletetrack_modal::'.length);
-        await musicPlaylistCommands.handleDeleteTrackModalSubmit(interaction, name);
+        await musicPlaylistCommands.handleDeleteTrackModalSubmit(interaction, name, (embed, components) => {
+          panelStore.setPanelScreen(interaction.channelId, {
+            embed: typeof embed?.toJSON === 'function' ? embed.toJSON() : embed,
+            components: (components || []).map((row) => (typeof row?.toJSON === 'function' ? row.toJSON() : row)),
+          });
+        });
       } catch (err) {
         log(`[PANEL] Error submit panelplaylist_deletetrack_modal: ${err?.stack || err}`);
       }
