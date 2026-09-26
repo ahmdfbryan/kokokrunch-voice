@@ -292,6 +292,15 @@ async function cmdPlaylist(message, args, rest) {
       return;
     }
 
+    // Nama BARU selalu boleh; kalau namanya udah dipakai playlist yang ADA,
+    // cuma pemiliknya yang boleh nimpa isinya.
+    const hasManageGuildSave = !!message.member?.permissions?.has(PermissionFlagsBits.ManageGuild);
+    const modifyCheckSave = playlistStore.canModify(message.guild.id, name, message.author.id, hasManageGuildSave);
+    if (!modifyCheckSave.allowed) {
+      await message.channel.send({ embeds: [textEmbed(musicPlaylistCommands.buildAddDenialMessage(name, modifyCheckSave))] });
+      return;
+    }
+
     const queue = musicManager.getQueue(message.guild.id);
     const tracks = [queue.current, ...queue.tracks].filter(Boolean);
     if (tracks.length === 0) {
@@ -325,6 +334,17 @@ async function cmdPlaylist(message, args, rest) {
       await message.channel.send({
         embeds: [textEmbed(`Gunakan: \`${PREFIX}playlist add <nama> <link1> <link2> ...\``)],
       });
+      return;
+    }
+
+    // Nama BARU selalu boleh; kalau namanya udah dipakai playlist yang ADA,
+    // cuma pemiliknya yang boleh nambahin lagu ke situ. Dicek duluan biar
+    // nggak buang-buang waktu resolve link kalau bakal ditolak.
+    const normalizedName = normalizeName(name);
+    const hasManageGuildAdd = !!message.member?.permissions?.has(PermissionFlagsBits.ManageGuild);
+    const modifyCheckAdd = playlistStore.canModify(message.guild.id, normalizedName, message.author.id, hasManageGuildAdd);
+    if (!modifyCheckAdd.allowed) {
+      await message.channel.send({ embeds: [textEmbed(musicPlaylistCommands.buildAddDenialMessage(normalizedName, modifyCheckAdd))] });
       return;
     }
 
