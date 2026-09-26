@@ -41,9 +41,26 @@ function buildHomeButton() {
   return new ButtonBuilder().setCustomId('panel_home').setLabel('Home').setEmoji('🏠').setStyle(ButtonStyle.Success);
 }
 
-/** Row isi 1 tombol Home doang -- dipakai di layar-layar yang cuma butuh itu (Bantuan, Voice Stats, dll). */
+/** Row isi 1 tombol Home doang -- dipakai di layar-layar yang cuma butuh itu (Bantuan, dll). */
 function buildHomeOnlyRow() {
   return new ActionRowBuilder().addComponents(buildHomeButton());
+}
+
+/**
+ * Tombol "Back" -- balik ke layar SATU TINGKAT DI ATAS fitur yang lagi
+ * dibuka (beda dari Home yang selalu balik ke Panel Utama). `targetCustomId`
+ * sengaja reuse customId screen yang udah ada (misal 'panel_featured' buat
+ * balik ke daftar fitur, atau 'panel_music' buat balik ke Kontrol Musik),
+ * jadi klik Back otomatis kepegang sama handler yang sudah ada di
+ * index.js -- nggak perlu logic dispatch baru.
+ */
+function buildBackButton(targetCustomId) {
+  return new ButtonBuilder().setCustomId(targetCustomId).setLabel('Back').setEmoji('⬅️').setStyle(ButtonStyle.Secondary);
+}
+
+/** Row isi Back + Home -- dipakai di layar-layar yang cuma butuh itu (Voice Stats, Playlist, dll). */
+function buildBackAndHomeRow(targetCustomId) {
+  return new ActionRowBuilder().addComponents(buildBackButton(targetCustomId), buildHomeButton());
 }
 
 /**
@@ -190,26 +207,32 @@ function buildVoiceStatsSelectRow() {
 /**
  * Baris tombol pilihan buat fitur Streak, dipakai di balasan ephemeral pas
  * tombol "Streak" di panel utama diklik. "Leaderboard" nampilin ranking
- * semua grup streak di server ini (dikirim publik ke channel).
+ * semua grup streak di server ini (dikirim publik ke channel). 6 tombol
+ * (4 aksi + Back + Home) dibagi rata 3-3 biar nggak nabrak limit 5/baris.
  */
 function buildStreakSubRow() {
-  return new ActionRowBuilder().addComponents(
+  const row1 = new ActionRowBuilder().addComponents(
     new ButtonBuilder().setCustomId('panelstreak_info').setLabel('Info Streak').setEmoji('🔥').setStyle(ButtonStyle.Danger),
     new ButtonBuilder().setCustomId('panelstreak_create').setLabel('Buat Grup').setEmoji('➕').setStyle(ButtonStyle.Success),
-    new ButtonBuilder().setCustomId('panelstreak_mygroup').setLabel('Grup Saya').setEmoji('👥').setStyle(ButtonStyle.Secondary),
+    new ButtonBuilder().setCustomId('panelstreak_mygroup').setLabel('Grup Saya').setEmoji('👥').setStyle(ButtonStyle.Secondary)
+  );
+  const row2 = new ActionRowBuilder().addComponents(
     new ButtonBuilder().setCustomId('panelstreak_leaderboard').setLabel('Leaderboard').setEmoji('🏆').setStyle(ButtonStyle.Secondary),
+    buildBackButton('panel_featured'),
     buildHomeButton()
   );
+  return [row1, row2];
 }
 
 /**
- * Baris 3 tombol pilihan buat fitur ID Card, dipakai di balasan ephemeral
+ * Baris tombol pilihan buat fitur ID Card, dipakai di balasan ephemeral
  * pas tombol "ID Card" di panel utama diklik.
  */
 function buildIdCardSubRow() {
   return new ActionRowBuilder().addComponents(
     new ButtonBuilder().setCustomId('panelid_create').setLabel('Buat ID').setEmoji('🆕').setStyle(ButtonStyle.Success),
     new ButtonBuilder().setCustomId('panelid_view').setLabel('Lihat ID Saya').setEmoji('🪪').setStyle(ButtonStyle.Secondary),
+    buildBackButton('panel_featured'),
     buildHomeButton()
   );
 }
@@ -232,6 +255,7 @@ function buildTiktokSubRow(status) {
       .setEmoji('⛔')
       .setStyle(ButtonStyle.Danger)
       .setDisabled(!status?.enabled),
+    buildBackButton('panel_featured'),
     buildHomeButton()
   );
 }
@@ -247,6 +271,7 @@ function buildGiveawaySubRow(canManage) {
     ...(canManage
       ? [new ButtonBuilder().setCustomId('panelgw_create').setLabel('Buat Giveaway').setEmoji('🎁').setStyle(ButtonStyle.Success)]
       : []),
+    buildBackButton('panel_featured'),
     buildHomeButton()
   );
 }
@@ -260,6 +285,7 @@ function buildGiveawaySubRow(canManage) {
 function buildAskRow() {
   return new ActionRowBuilder().addComponents(
     new ButtonBuilder().setCustomId('panel_ask_open').setLabel('Buka Form').setEmoji('📝').setStyle(ButtonStyle.Primary),
+    buildBackButton('panel_featured'),
     buildHomeButton()
   );
 }
@@ -270,6 +296,8 @@ module.exports = {
   buildHomeButtons,
   buildHomeButton,
   buildHomeOnlyRow,
+  buildBackButton,
+  buildBackAndHomeRow,
   buildFeaturedEmbed,
   buildFeaturedButtons,
   buildMusicSubRow,
