@@ -55,6 +55,7 @@ const panelStore = require('./panelStore');
 const {
   buildPanelCard,
   buildHomeOnlyRow,
+  buildBackAndHomeRow,
   buildFeaturedEmbed,
   buildFeaturedButtons,
   buildMusicSubRow,
@@ -986,7 +987,7 @@ client.on('interactionCreate', async (interaction) => {
           .setAuthor({ name: '📊  Voice Stats' })
           .setDescription('Mau tampilkan apa ke channel ini? Pilih dari dropdown di bawah.')
           .setFooter({ text: 'Hasilnya bakal dikirim publik ke channel, bukan cuma buat kamu.' });
-        await respondPanelScreen(interaction, embed, [buildVoiceStatsSelectRow(), buildHomeOnlyRow()]);
+        await respondPanelScreen(interaction, embed, [buildVoiceStatsSelectRow(), buildBackAndHomeRow('panel_featured')]);
       } catch (err) {
         log(`[PANEL] Error tombol panel_voicestats: ${err?.stack || err}`);
       }
@@ -1181,7 +1182,7 @@ client.on('interactionCreate', async (interaction) => {
           .setColor(PANEL_COLOR)
           .setAuthor({ name: '🔥  Grup Streak Chat' })
           .setDescription('Pilih salah satu di bawah ini.');
-        await respondPanelScreen(interaction, embed, [buildStreakSubRow()]);
+        await respondPanelScreen(interaction, embed, buildStreakSubRow());
       } catch (err) {
         log(`[PANEL] Error tombol panel_streak: ${err?.stack || err}`);
       }
@@ -1424,7 +1425,7 @@ client.on('interactionCreate', async (interaction) => {
       try {
         const embed = musicPlaylistCommands.buildPlaylistOverviewEmbed(interaction.user.id);
         const selectRow = musicPlaylistCommands.buildPlaylistSelectRow(interaction.user.id);
-        const components = selectRow ? [selectRow, buildHomeOnlyRow()] : [buildHomeOnlyRow()];
+        const components = selectRow ? [selectRow, buildBackAndHomeRow('panel_music')] : [buildBackAndHomeRow('panel_music')];
         await respondPanelScreen(interaction, embed, components);
       } catch (err) {
         log(`[PANEL] Error tombol panelmusic_playlist: ${err?.stack || err}`);
@@ -1703,7 +1704,7 @@ client.on('interactionCreate', async (interaction) => {
           // Race condition (misal playlist-nya kehapus barengan) -- balik ke overview lagi.
           const overviewEmbed = musicPlaylistCommands.buildPlaylistOverviewEmbed(interaction.user.id);
           const selectRow = musicPlaylistCommands.buildPlaylistSelectRow(interaction.user.id);
-          const components = selectRow ? [selectRow, buildHomeOnlyRow()] : [buildHomeOnlyRow()];
+          const components = selectRow ? [selectRow, buildBackAndHomeRow('panel_music')] : [buildBackAndHomeRow('panel_music')];
           await respondPanelScreen(interaction, overviewEmbed, components);
           return;
         }
