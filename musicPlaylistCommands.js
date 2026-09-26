@@ -126,19 +126,24 @@ function buildPlaylistDetailEmbed(guildId, name) {
 }
 
 /**
- * Tombol-tombol di layar detail playlist -- 7 tombol (Play, Add, Rename,
- * Hapus Lagu, Hapus Playlist, Back, Home) dibagi 3-4 biar nggak nabrak limit
- * 5/baris. Nama playlist-nya dikodein di tiap customId (`::<nama>`) biar
- * handler-nya di index.js tau lagi ngurusin playlist yang mana. "Hapus Lagu"
- * cuma ngehapus SATU lagu (lewat modal, minta nomor urutnya), sedangkan
- * "Hapus Playlist" ngehapus SELURUH playlist-nya langsung (nggak ada modal,
- * langsung ke overview) -- ini versi tombol dari `/playlist delete`.
+ * Tombol-tombol di layar detail playlist -- 8 tombol (Play, Add, Add Antrian,
+ * Rename, Hapus Lagu, Hapus Playlist, Back, Home) dibagi 4-4 biar nggak
+ * nabrak limit 5/baris. Nama playlist-nya dikodein di tiap customId
+ * (`::<nama>`) biar handler-nya di index.js tau lagi ngurusin playlist yang
+ * mana. "Add" cuma nambahin SATU lagu yang lagi diputar sekarang, sedangkan
+ * "Add Antrian" nambahin SEMUA lagu yang lagi diputar + di antrian sekaligus
+ * (dobel/link yang udah ada di playlist otomatis dilewatin, nggak nyimpen
+ * 2x). "Hapus Lagu" cuma ngehapus SATU lagu (lewat modal, minta nomor
+ * urutnya), sedangkan "Hapus Playlist" ngehapus SELURUH playlist-nya langsung
+ * (nggak ada modal, langsung ke overview) -- ini versi tombol dari
+ * `/playlist delete`.
  *
  * `canManage` = boolean (dari `playlistStore.canDelete(...).allowed` yang
- * manggil) -- kalau `false` (bukan pemilik playlist ini), Add/Rename/Hapus
- * Lagu/Hapus Playlist ditampilin DISABLED (member itu cuma boleh Play).
- * Server-side tetep ada pengecekan sendiri di tiap handler-nya (jaga-jaga),
- * ini cuma biar UI-nya nggak nawarin tombol yang bakal ditolak.
+ * manggil) -- kalau `false` (bukan pemilik playlist ini), Add/Add
+ * Antrian/Rename/Hapus Lagu/Hapus Playlist ditampilin DISABLED (member itu
+ * cuma boleh Play). Server-side tetep ada pengecekan sendiri di tiap
+ * handler-nya (jaga-jaga), ini cuma biar UI-nya nggak nawarin tombol yang
+ * bakal ditolak.
  */
 function buildPlaylistDetailButtons(name, canManage) {
   const row1 = new ActionRowBuilder().addComponents(
@@ -147,6 +152,12 @@ function buildPlaylistDetailButtons(name, canManage) {
       .setCustomId(`panelplaylist_add::${name}`)
       .setLabel('Add')
       .setEmoji('➕')
+      .setStyle(ButtonStyle.Secondary)
+      .setDisabled(!canManage),
+    new ButtonBuilder()
+      .setCustomId(`panelplaylist_addqueue::${name}`)
+      .setLabel('Add Antrian')
+      .setEmoji('📥')
       .setStyle(ButtonStyle.Secondary)
       .setDisabled(!canManage),
     new ButtonBuilder()
@@ -235,12 +246,54 @@ async function addCurrentTrackToPlaylist(interaction, name) {
     id: interaction.user.id,
     tag: interaction.user.tag,
   });
-  await interaction.reply({
-    embeds: [
-      textEmbed(`**${current.title}** ditambahin ke playlist **${name}** (total sekarang: ${result.trackCount} lagu).`),
-    ],
-    flags: MessageFlags.Ephemeral,
+
+  const message =
+    result.addedCount > 0
+      ? `**${current.title}** ditambahin ke playlist **${name}** (total sekarang: ${result.trackCount} lagu).`
+      : `**${current.title}** udah ada di playlist **${name}**, nggak ditambahin lagi (biar nggak dobel).`;
+  await interaction.reply({ embeds: [textEmbed(message)], flags: MessageFlags.Ephemeral });
+}
+
+/**
+ * Tombol "Add Antrian" di layar detail playlist -- nambahin SEMUA lagu yang
+ * lagi diputar SEKARANG + yang lagi ANTRI (bukan cuma 1 lagu kayak tombol
+ * "Add" biasa) ke playlist yang lagi dibuka sekaligus. Cocok dipakai pas
+ * user udah nge-queue banyak lagu terus mau nyimpen semuanya jadi playlist
+ * tanpa harus Add satu-satu. Lagu yang linknya UDAH ADA di playlist ini
+ * otomatis dilewatin (nggak nyimpen dobel) -- makanya pesannya nyebutin
+ * berapa yang beneran baru vs berapa yang dilewatin karena dobel.
+ */
+async function addQueueToPlaylist(interaction, name) {
+  const hasManageGuild = !!interaction.memberPermissions?.has(PermissionFlagsBits.ManageGuild);
+  const check = playlistStore.canDelete(interaction.guildId, name, interaction.user.id, hasManageGuild);
+  if (!check.allowed) {
+    await interaction.reply({ embeds: [textEmbed(buildAddDenialMessage(name, check))], flags: MessageFlags.Ephemeral });
+    return;
+  }
+
+  const queue = musicManager.getQueue(interaction.guildId);
+  const tracks = [queue.current, ...queue.tracks].filter(Boolean);
+  if (tracks.length === 0) {
+    await interaction.reply({
+      embeds: [textEmbed('Nggak ada musik yang lagi diputar/diantrikan buat ditambahin ke playlist.')],
+      flags: MessageFlags.Ephemeral,
+    });
+    return;
+  }
+
+  const result = playlistStore.appendToPlaylist(interaction.guildId, name, tracks, {
+    id: interaction.user.id,
+    tag: interaction.user.tag,
   });
+
+  let message = `${result.addedCount} lagu ditambahin ke playlist **${name}** (total sekarang: ${result.trackCount} lagu).`;
+  if (result.skippedDuplicates > 0) {
+    message += ` ${result.skippedDuplicates} lagu dilewatin karena udah ada di playlist ini (dobel).`;
+  }
+  if (result.truncated) {
+    message += `\n\nPlaylist udah kena batas maksimal ${playlistStore.MAX_TRACKS_PER_PLAYLIST} lagu, sisanya dipotong.`;
+  }
+  await interaction.reply({ embeds: [textEmbed(message)], flags: MessageFlags.Ephemeral });
 }
 
 /**
@@ -506,6 +559,9 @@ const playlistCommand = {
 
       const verb = result.isNew ? 'disimpan' : 'diupdate';
       let message = `Playlist **${name}** ${verb} (${result.trackCount} lagu).`;
+      if (result.skippedDuplicates > 0) {
+        message += ` ${result.skippedDuplicates} lagu dilewatin karena dobel (link sama).`;
+      }
       if (result.truncated) {
         message += `\n\nCatatan: lebih dari ${playlistStore.MAX_TRACKS_PER_PLAYLIST} lagu, cuma ${playlistStore.MAX_TRACKS_PER_PLAYLIST} lagu pertama yang disimpan.`;
       }
@@ -583,7 +639,8 @@ const playlistCommand = {
         return;
       }
 
-      let message = `${resolvedTracks.length} lagu ditambahkan ke playlist **${name}** (total sekarang: ${result.trackCount} lagu).`;
+      let message = `${result.addedCount} lagu ditambahkan ke playlist **${name}** (total sekarang: ${result.trackCount} lagu).`;
+      if (result.skippedDuplicates > 0) message += ` ${result.skippedDuplicates} lagu dilewatin karena udah ada di playlist ini (dobel).`;
       if (failedCount > 0) message += `\n\n${failedCount} link gagal diproses dan dilewati.`;
       if (result.truncated) {
         message += `\n\nPlaylist udah kena batas maksimal ${playlistStore.MAX_TRACKS_PER_PLAYLIST} lagu, sisanya dipotong.`;
@@ -667,6 +724,7 @@ module.exports.buildPlaylistDetailEmbed = buildPlaylistDetailEmbed;
 module.exports.buildPlaylistDetailButtons = buildPlaylistDetailButtons;
 module.exports.playPlaylistForPanel = playPlaylistForPanel;
 module.exports.addCurrentTrackToPlaylist = addCurrentTrackToPlaylist;
+module.exports.addQueueToPlaylist = addQueueToPlaylist;
 module.exports.buildRenameModal = buildRenameModal;
 module.exports.handleRenameModalSubmit = handleRenameModalSubmit;
 module.exports.buildDeleteTrackModal = buildDeleteTrackModal;
