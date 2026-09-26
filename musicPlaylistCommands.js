@@ -1,8 +1,17 @@
-const { SlashCommandBuilder, EmbedBuilder, MessageFlags } = require('discord.js');
+const {
+  SlashCommandBuilder,
+  EmbedBuilder,
+  MessageFlags,
+  ActionRowBuilder,
+  ButtonBuilder,
+  ButtonStyle,
+  StringSelectMenuBuilder,
+} = require('discord.js');
 const musicManager = require('./musicManager');
 const playlistStore = require('./musicPlaylistStore');
 const trackResolver = require('./trackResolver');
 const { claimNowPlayingCard } = require('./nowPlayingCard');
+const { buildHomeButton } = require('./panelCard');
 
 const COLOR = 0x5865f2;
 const MAX_NAME_LEN = 50;
@@ -26,28 +35,117 @@ function normalizeName(raw) {
   return raw.trim().slice(0, MAX_NAME_LEN);
 }
 
-// Daftar deskripsi subcommand /playlist -- ditulis manual (bukan introspeksi
-// dari SlashCommandBuilder) biar simpel & konsisten dipakai di mana aja,
-// termasuk dari tombol "Playlist" di panel bot (lihat buildPlaylistCommandsEmbed).
-const PLAYLIST_SUBCOMMAND_DOCS = [
-  { name: 'save', desc: 'Simpan antrian musik yang lagi jalan jadi playlist' },
-  { name: 'add', desc: 'Tambahin lagu ke playlist langsung dari link (nggak perlu lagi diputar dulu)' },
-  { name: 'play', desc: 'Putar playlist yang udah disimpan' },
-  { name: 'list', desc: 'Lihat semua playlist kamu' },
-  { name: 'delete', desc: 'Hapus playlist' },
-];
+// Maks jumlah lagu yang ditampilin satu-satu di layar detail playlist (panel)
+// biar embed-nya nggak kepanjangan -- sisanya cuma diringkas jadi "+N lainnya".
+const MAX_TRACKS_SHOWN_IN_DETAIL = 20;
 
 /**
- * Embed daftar command /playlist -- dipakai dari tombol "Playlist" di panel
- * bot (Kontrol Musik), biar orang nggak perlu ngapalin subcommand-nya.
+ * Embed overview SEMUA playlist tersimpan milik 1 user -- dipakai di layar
+ * "Playlist" pas tombol Playlist di panel (Kontrol Musik) diklik. Nampilin
+ * jumlah lagu & total durasi tiap playlist sebagai overview aja (bukan isi
+ * lagunya -- itu ada di buildPlaylistDetailEmbed pas salah satu playlist
+ * dipilih dari dropdown).
  */
-function buildPlaylistCommandsEmbed() {
-  const lines = PLAYLIST_SUBCOMMAND_DOCS.map((c) => `**/playlist ${c.name}** — ${c.desc}`);
+function buildPlaylistOverviewEmbed(userId) {
+  const playlists = playlistStore.listPlaylists(userId);
+  const embed = new EmbedBuilder().setColor(COLOR).setAuthor({ name: '📁  Playlist Kamu' });
+
+  if (playlists.length === 0) {
+    embed.setDescription(
+      'Kamu belum punya playlist tersimpan.\n\nSimpan antrian musik yang lagi jalan jadi playlist dulu pakai `/playlist save`.'
+    );
+    return embed;
+  }
+
+  const lines = playlists.map(
+    (p, i) => `${i + 1}. **${p.name}** — ${p.trackCount} lagu (${formatDurationLong(p.totalSeconds)})`
+  );
+  embed.setDescription([...lines, '', 'Pilih salah satu di dropdown bawah buat liat isi & muterinnya.'].join('\n'));
+  return embed;
+}
+
+/**
+ * Dropdown pilihan playlist buat dilihat/diputar. Batasnya ngikutin
+ * MAX_PLAYLISTS_PER_USER (25), pas banget sama limit maksimal option select
+ * menu Discord. Return null kalau user belum punya playlist sama sekali,
+ * biar nggak render select menu kosong (Discord bakal nolak itu).
+ */
+function buildPlaylistSelectRow(userId) {
+  const playlists = playlistStore.listPlaylists(userId);
+  if (playlists.length === 0) return null;
+
+  const menu = new StringSelectMenuBuilder()
+    .setCustomId('panelplaylist_select')
+    .setPlaceholder('Pilih playlist buat dilihat/diputar')
+    .addOptions(
+      playlists.map((p) => ({
+        label: p.name,
+        description: `${p.trackCount} lagu • ${formatDurationLong(p.totalSeconds)}`,
+        value: p.name,
+      }))
+    );
+  return new ActionRowBuilder().addComponents(menu);
+}
+
+/**
+ * Embed detail isi 1 playlist -- overview (jumlah lagu & total durasi) di
+ * atas, lalu daftar lagunya satu-satu (dibatasin MAX_TRACKS_SHOWN_IN_DETAIL
+ * biar description-nya nggak kepanjangan). Return null kalau playlist-nya
+ * ternyata udah nggak ada lagi (misal kehapus barengan lewat /playlist delete).
+ */
+function buildPlaylistDetailEmbed(userId, name) {
+  const tracks = playlistStore.getPlaylist(userId, name);
+  if (!tracks) return null;
+
+  const totalSeconds = tracks.reduce((sum, t) => sum + (t.durationSeconds || 0), 0);
+  const shown = tracks.slice(0, MAX_TRACKS_SHOWN_IN_DETAIL);
+  const trackLines = shown.map((t, i) => `${i + 1}. ${t.title}${t.durationText ? ` — \`${t.durationText}\`` : ''}`);
+  if (tracks.length > shown.length) {
+    trackLines.push(`*+${tracks.length - shown.length} lagu lainnya*`);
+  }
+
   return new EmbedBuilder()
     .setColor(COLOR)
-    .setAuthor({ name: '📁  Command Playlist' })
-    .setDescription(lines.join('\n'))
-    .setFooter({ text: 'Semua command ini juga bisa dipakai lewat prefix, misal s!playlist play <nama>' });
+    .setAuthor({ name: `📁  ${name}` })
+    .setDescription([`**${tracks.length}** lagu • **${formatDurationLong(totalSeconds)}**`, '', ...trackLines].join('\n'));
+}
+
+/** Tombol Play (nama playlist dikodein di customId) + Home di layar detail playlist. */
+function buildPlaylistDetailButtons(name) {
+  return new ActionRowBuilder().addComponents(
+    new ButtonBuilder().setCustomId(`panelplaylist_play::${name}`).setLabel('Play').setEmoji('▶️').setStyle(ButtonStyle.Secondary),
+    buildHomeButton()
+  );
+}
+
+/**
+ * Muterin 1 playlist tersimpan dari tombol "Play" di layar detail playlist
+ * (panel). Logikanya sama kayak /playlist play, tapi ack-nya ephemeral
+ * (ngikutin konvensi tombol panel lain kayak Skip/Stop), bukan reply publik
+ * kayak command aslinya -- Now Playing card-nya sendiri tetap diposting
+ * publik ke channel kalau langsung mulai muter.
+ */
+async function playPlaylistForPanel(interaction, name) {
+  const tracks = playlistStore.getPlaylist(interaction.user.id, name);
+  if (!tracks || tracks.length === 0) {
+    await interaction.reply({ embeds: [textEmbed(`Playlist **${name}** nggak ketemu.`)], flags: MessageFlags.Ephemeral });
+    return;
+  }
+
+  await interaction.deferReply({ flags: MessageFlags.Ephemeral });
+  const tracksCopy = tracks.map((t) => ({ ...t, requestedBy: interaction.user.tag, requestedById: interaction.user.id }));
+  musicManager.setTextChannel(interaction.guildId, interaction.channelId);
+  const { startedImmediately } = musicManager.enqueueMany(interaction.guildId, tracksCopy);
+
+  await interaction.editReply({
+    embeds: [textEmbed(`Playlist **${name}** (${tracks.length} lagu) ditambahkan ke antrian.`)],
+  });
+
+  if (startedImmediately) {
+    await claimNowPlayingCard(interaction.guildId, interaction.client, (embed, components) =>
+      interaction.channel.send({ embeds: [embed], components })
+    );
+  }
 }
 
 const playlistCommand = {
@@ -281,4 +379,8 @@ const playlistCommand = {
 };
 
 module.exports = [playlistCommand];
-module.exports.buildPlaylistCommandsEmbed = buildPlaylistCommandsEmbed;
+module.exports.buildPlaylistOverviewEmbed = buildPlaylistOverviewEmbed;
+module.exports.buildPlaylistSelectRow = buildPlaylistSelectRow;
+module.exports.buildPlaylistDetailEmbed = buildPlaylistDetailEmbed;
+module.exports.buildPlaylistDetailButtons = buildPlaylistDetailButtons;
+module.exports.playPlaylistForPanel = playPlaylistForPanel;
