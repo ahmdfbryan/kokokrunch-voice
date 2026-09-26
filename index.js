@@ -1422,12 +1422,25 @@ client.on('interactionCreate', async (interaction) => {
 
     if (interaction.customId === 'panelmusic_playlist') {
       try {
-        await interaction.reply({
-          embeds: [musicPlaylistCommands.buildPlaylistCommandsEmbed()],
-          flags: MessageFlags.Ephemeral,
-        });
+        const embed = musicPlaylistCommands.buildPlaylistOverviewEmbed(interaction.user.id);
+        const selectRow = musicPlaylistCommands.buildPlaylistSelectRow(interaction.user.id);
+        const components = selectRow ? [selectRow, buildHomeOnlyRow()] : [buildHomeOnlyRow()];
+        await respondPanelScreen(interaction, embed, components);
       } catch (err) {
         log(`[PANEL] Error tombol panelmusic_playlist: ${err?.stack || err}`);
+      }
+      return;
+    }
+
+    // Tombol "Play" di layar detail playlist -- nama playlist-nya dikodein
+    // di customId (panelplaylist_play::<nama>). Ini leaf action (ephemeral
+    // ack), sama konvensinya kayak Skip/Stop, BUKAN respondPanelScreen.
+    if (interaction.customId.startsWith('panelplaylist_play::')) {
+      try {
+        const name = interaction.customId.slice('panelplaylist_play::'.length);
+        await musicPlaylistCommands.playPlaylistForPanel(interaction, name);
+      } catch (err) {
+        log(`[PANEL] Error tombol panelplaylist_play: ${err?.stack || err}`);
       }
       return;
     }
@@ -1675,6 +1688,28 @@ client.on('interactionCreate', async (interaction) => {
         });
       } catch (err) {
         log(`[PANEL] Error dropdown voice stats: ${err?.stack || err}`);
+      }
+      return;
+    }
+
+    // Dropdown pilih playlist dari layar "Playlist" (mini-menu Musik) --
+    // update panel yang sama jadi layar detail (overview + isi lagu) dari
+    // playlist yang dipilih, plus tombol Play & Home.
+    if (interaction.customId === 'panelplaylist_select') {
+      try {
+        const name = interaction.values[0];
+        const detailEmbed = musicPlaylistCommands.buildPlaylistDetailEmbed(interaction.user.id, name);
+        if (!detailEmbed) {
+          // Race condition (misal playlist-nya kehapus barengan) -- balik ke overview lagi.
+          const overviewEmbed = musicPlaylistCommands.buildPlaylistOverviewEmbed(interaction.user.id);
+          const selectRow = musicPlaylistCommands.buildPlaylistSelectRow(interaction.user.id);
+          const components = selectRow ? [selectRow, buildHomeOnlyRow()] : [buildHomeOnlyRow()];
+          await respondPanelScreen(interaction, overviewEmbed, components);
+          return;
+        }
+        await respondPanelScreen(interaction, detailEmbed, [musicPlaylistCommands.buildPlaylistDetailButtons(name)]);
+      } catch (err) {
+        log(`[PANEL] Error dropdown panelplaylist_select: ${err?.stack || err}`);
       }
       return;
     }
