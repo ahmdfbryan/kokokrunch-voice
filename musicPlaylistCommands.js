@@ -126,18 +126,19 @@ function buildPlaylistDetailEmbed(guildId, name) {
 }
 
 /**
- * Tombol-tombol di layar detail playlist -- 6 tombol (Play, Add, Rename,
- * Hapus Lagu, Back, Home) dibagi rata 3-3 biar nggak nabrak limit 5/baris.
- * Nama playlist-nya dikodein di tiap customId (`::<nama>`) biar handler-nya
- * di index.js tau lagi ngurusin playlist yang mana. "Hapus Lagu" cuma
- * ngehapus SATU lagu (lewat modal, minta nomor urutnya) -- BUKAN ngehapus
- * seluruh playlist (buat itu, tetep pakai `/playlist delete`).
+ * Tombol-tombol di layar detail playlist -- 7 tombol (Play, Add, Rename,
+ * Hapus Lagu, Hapus Playlist, Back, Home) dibagi 3-4 biar nggak nabrak limit
+ * 5/baris. Nama playlist-nya dikodein di tiap customId (`::<nama>`) biar
+ * handler-nya di index.js tau lagi ngurusin playlist yang mana. "Hapus Lagu"
+ * cuma ngehapus SATU lagu (lewat modal, minta nomor urutnya), sedangkan
+ * "Hapus Playlist" ngehapus SELURUH playlist-nya langsung (nggak ada modal,
+ * langsung ke overview) -- ini versi tombol dari `/playlist delete`.
  *
  * `canManage` = boolean (dari `playlistStore.canDelete(...).allowed` yang
  * manggil) -- kalau `false` (bukan pemilik playlist ini), Add/Rename/Hapus
- * Lagu ditampilin DISABLED (member itu cuma boleh Play). Server-side tetep
- * ada pengecekan sendiri di tiap handler-nya (jaga-jaga), ini cuma biar UI-nya
- * nggak nawarin tombol yang bakal ditolak.
+ * Lagu/Hapus Playlist ditampilin DISABLED (member itu cuma boleh Play).
+ * Server-side tetep ada pengecekan sendiri di tiap handler-nya (jaga-jaga),
+ * ini cuma biar UI-nya nggak nawarin tombol yang bakal ditolak.
  */
 function buildPlaylistDetailButtons(name, canManage) {
   const row1 = new ActionRowBuilder().addComponents(
@@ -160,6 +161,12 @@ function buildPlaylistDetailButtons(name, canManage) {
       .setCustomId(`panelplaylist_deletetrack::${name}`)
       .setLabel('Hapus Lagu')
       .setEmoji('🗑️')
+      .setStyle(ButtonStyle.Danger)
+      .setDisabled(!canManage),
+    new ButtonBuilder()
+      .setCustomId(`panelplaylist_deleteall::${name}`)
+      .setLabel('Hapus Playlist')
+      .setEmoji('💥')
       .setStyle(ButtonStyle.Danger)
       .setDisabled(!canManage),
     buildBackButton('panel_music'),
