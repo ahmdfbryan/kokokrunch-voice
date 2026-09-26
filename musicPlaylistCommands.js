@@ -126,24 +126,26 @@ function buildPlaylistDetailEmbed(guildId, name) {
 }
 
 /**
- * Tombol-tombol di layar detail playlist -- 8 tombol (Play, Add, Add Antrian,
- * Rename, Hapus Lagu, Hapus Playlist, Back, Home) dibagi 4-4 biar nggak
- * nabrak limit 5/baris. Nama playlist-nya dikodein di tiap customId
- * (`::<nama>`) biar handler-nya di index.js tau lagi ngurusin playlist yang
- * mana. "Add" cuma nambahin SATU lagu yang lagi diputar sekarang, sedangkan
- * "Add Antrian" nambahin SEMUA lagu yang lagi diputar + di antrian sekaligus
- * (dobel/link yang udah ada di playlist otomatis dilewatin, nggak nyimpen
- * 2x). "Hapus Lagu" cuma ngehapus SATU lagu (lewat modal, minta nomor
- * urutnya), sedangkan "Hapus Playlist" ngehapus SELURUH playlist-nya langsung
- * (nggak ada modal, langsung ke overview) -- ini versi tombol dari
- * `/playlist delete`.
+ * Tombol-tombol di layar detail playlist -- 8 tombol dibagi 3 baris
+ * berdasarkan fungsinya (bukan asal dipepetin biar muat 5/baris), biar
+ * enak diliat:
+ *   row1 (Secondary, buat SEMUA member): Play, Add, Add Antrian
+ *   row2 (aksi ngubah playlist -- Danger buat yang destruktif): Rename, Hapus, Hapus Playlist
+ *   row3 (navigasi): Back, Home
+ * Nama playlist-nya dikodein di tiap customId (`::<nama>`) biar handler-nya
+ * di index.js tau lagi ngurusin playlist yang mana. "Add" cuma nambahin SATU
+ * lagu yang lagi diputar sekarang, sedangkan "Add Antrian" nambahin SEMUA
+ * lagu yang lagi diputar + di antrian sekaligus (dobel/link yang udah ada di
+ * playlist otomatis dilewatin, nggak nyimpen 2x). "Hapus" cuma ngehapus SATU
+ * lagu (lewat modal, minta nomor urutnya), sedangkan "Hapus Playlist"
+ * ngehapus SELURUH playlist-nya langsung (nggak ada modal, langsung ke
+ * overview) -- ini versi tombol dari `/playlist delete`.
  *
  * `canManage` = boolean (dari `playlistStore.canDelete(...).allowed` yang
  * manggil) -- kalau `false` (bukan pemilik playlist ini), Add/Add
- * Antrian/Rename/Hapus Lagu/Hapus Playlist ditampilin DISABLED (member itu
- * cuma boleh Play). Server-side tetep ada pengecekan sendiri di tiap
- * handler-nya (jaga-jaga), ini cuma biar UI-nya nggak nawarin tombol yang
- * bakal ditolak.
+ * Antrian/Rename/Hapus/Hapus Playlist ditampilin DISABLED (member itu cuma
+ * boleh Play). Server-side tetep ada pengecekan sendiri di tiap handler-nya
+ * (jaga-jaga), ini cuma biar UI-nya nggak nawarin tombol yang bakal ditolak.
  */
 function buildPlaylistDetailButtons(name, canManage) {
   const row1 = new ActionRowBuilder().addComponents(
@@ -159,15 +161,15 @@ function buildPlaylistDetailButtons(name, canManage) {
       .setLabel('Add Antrian')
       .setEmoji('📥')
       .setStyle(ButtonStyle.Secondary)
-      .setDisabled(!canManage),
+      .setDisabled(!canManage)
+  );
+  const row2 = new ActionRowBuilder().addComponents(
     new ButtonBuilder()
       .setCustomId(`panelplaylist_rename::${name}`)
       .setLabel('Rename')
       .setEmoji('✏️')
       .setStyle(ButtonStyle.Secondary)
-      .setDisabled(!canManage)
-  );
-  const row2 = new ActionRowBuilder().addComponents(
+      .setDisabled(!canManage),
     new ButtonBuilder()
       .setCustomId(`panelplaylist_deletetrack::${name}`)
       .setLabel('Hapus')
@@ -179,11 +181,13 @@ function buildPlaylistDetailButtons(name, canManage) {
       .setLabel('Hapus Playlist')
       .setEmoji('💥')
       .setStyle(ButtonStyle.Danger)
-      .setDisabled(!canManage),
+      .setDisabled(!canManage)
+  );
+  const row3 = new ActionRowBuilder().addComponents(
     buildBackButton('panel_music'),
     buildHomeButton()
   );
-  return [row1, row2];
+  return [row1, row2, row3];
 }
 
 /**
