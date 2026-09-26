@@ -59,7 +59,7 @@ const TOOL_DECLARATIONS = [
   {
     name: 'save_playlist',
     description:
-      'Simpan antrian musik yang lagi jalan sekarang (lagu yang lagi main + semua yang ngantri) jadi playlist pribadi milik user yang minta.',
+      'Simpan antrian musik yang lagi jalan sekarang (lagu yang lagi main + semua yang ngantri) jadi playlist milik SERVER ini (bisa dilihat & dipakai semua member, bukan cuma yang nyimpen).',
     parametersJsonSchema: {
       type: 'object',
       properties: { name: { type: 'string', description: 'Nama buat playlist yang disimpan' } },
@@ -68,7 +68,7 @@ const TOOL_DECLARATIONS = [
   },
   {
     name: 'play_playlist',
-    description: 'Putar playlist pribadi tersimpan milik user yang minta -- tambahkan semua lagunya ke antrian.',
+    description: 'Putar playlist tersimpan milik server ini -- tambahkan semua lagunya ke antrian.',
     parametersJsonSchema: {
       type: 'object',
       properties: { name: { type: 'string', description: 'Nama playlist tersimpan yang mau diputar' } },
@@ -103,7 +103,7 @@ const TOOL_DECLARATIONS = [
   {
     name: 'add_to_playlist',
     description:
-      'Tambahkan satu atau lebih link lagu ke playlist pribadi milik user yang minta (bikin playlist baru kalau namanya belum ada, atau nambah ke yang udah ada).',
+      'Tambahkan satu atau lebih link lagu ke playlist milik server ini (bikin playlist baru kalau namanya belum ada, atau nambah ke yang udah ada).',
     parametersJsonSchema: {
       type: 'object',
       properties: {
@@ -115,12 +115,12 @@ const TOOL_DECLARATIONS = [
   },
   {
     name: 'list_playlists',
-    description: 'Lihat semua playlist pribadi tersimpan milik user yang minta, beserta jumlah lagunya.',
+    description: 'Lihat semua playlist tersimpan milik server ini, beserta jumlah lagunya.',
     parametersJsonSchema: { type: 'object', properties: {} },
   },
   {
     name: 'delete_playlist',
-    description: 'Hapus playlist pribadi tersimpan milik user yang minta.',
+    description: 'Hapus playlist tersimpan milik server ini.',
     parametersJsonSchema: {
       type: 'object',
       properties: { name: { type: 'string', description: 'Nama playlist yang mau dihapus' } },
@@ -285,7 +285,7 @@ async function executeTool(toolName, args, ctx) {
         }
         const name = String(args?.name || '').trim().slice(0, 50);
         if (!name) return { success: false, message: 'Nama playlist nggak boleh kosong.' };
-        const result = playlistStore.savePlaylist(userId, name, tracks);
+        const result = playlistStore.savePlaylist(guildId, name, tracks);
         return {
           success: true,
           message: `Playlist "${name}" ${result.isNew ? 'disimpan' : 'diupdate'} (${result.trackCount} lagu).`,
@@ -295,7 +295,7 @@ async function executeTool(toolName, args, ctx) {
       case 'play_playlist': {
         const name = String(args?.name || '').trim();
         if (!name) return { success: false, message: 'Nama playlist nggak boleh kosong.' };
-        const tracks = playlistStore.getPlaylist(userId, name);
+        const tracks = playlistStore.getPlaylist(guildId, name);
         if (!tracks || tracks.length === 0) return { success: false, message: `Playlist "${name}" nggak ketemu.` };
 
         const tracksCopy = tracks.map((t) => ({ ...t, requestedBy: userTag, requestedById: userId }));
@@ -357,15 +357,15 @@ async function executeTool(toolName, args, ctx) {
         }
         if (resolvedTracks.length === 0) return { success: false, message: 'Nggak ada satupun link yang berhasil diproses.' };
 
-        const result = playlistStore.appendToPlaylist(userId, name, resolvedTracks);
+        const result = playlistStore.appendToPlaylist(guildId, name, resolvedTracks);
         let message = `${resolvedTracks.length} lagu ditambahkan ke playlist "${name}" (total sekarang: ${result.trackCount} lagu).`;
         if (failedCount > 0) message += ` ${failedCount} link gagal diproses.`;
         return { success: true, message };
       }
 
       case 'list_playlists': {
-        const playlists = playlistStore.listPlaylists(userId);
-        if (playlists.length === 0) return { success: true, message: 'User ini belum punya playlist tersimpan.' };
+        const playlists = playlistStore.listPlaylists(guildId);
+        if (playlists.length === 0) return { success: true, message: 'Server ini belum punya playlist tersimpan.' };
         const list = playlists.map((p) => `${p.name} (${p.trackCount} lagu)`).join(', ');
         return { success: true, message: `Playlist tersimpan: ${list}.` };
       }
@@ -373,7 +373,7 @@ async function executeTool(toolName, args, ctx) {
       case 'delete_playlist': {
         const name = String(args?.name || '').trim();
         if (!name) return { success: false, message: 'Nama playlist nggak boleh kosong.' };
-        const deleted = playlistStore.deletePlaylist(userId, name);
+        const deleted = playlistStore.deletePlaylist(guildId, name);
         return { success: deleted, message: deleted ? `Playlist "${name}" dihapus.` : `Playlist "${name}" nggak ketemu.` };
       }
 
