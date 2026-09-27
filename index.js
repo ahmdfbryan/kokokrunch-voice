@@ -486,6 +486,50 @@ function buildVoiceStatsEmbed(user) {
 // yang sama dipakai /voiceleaderboard DAN dropdown leaderboard di panel).
 
 // ============================================================
+// AUTO-TIMEOUT PANEL: kalau panel lagi nampilin layar SELAIN Home (misal lagi
+// buka Playlist, Streak, dst) dan channel-nya nggak ada interaksi tombol/
+// dropdown/modal panel sama sekali selama PANEL_IDLE_TIMEOUT_MS, panel
+// otomatis dibalikin ke Panel Utama -- biar nggak numpuk kebuka di layar
+// yang udah ditinggal lama. `panelLastActivity` cuma nyimpen timestamp di
+// MEMORI (nggak perlu di-persist ke disk -- restart bot itu wajar bikin
+// timer-nya reset, itung-itung "aktivitas baru").
+const PANEL_IDLE_TIMEOUT_MS = 10 * 60 * 1000; // 10 menit
+const PANEL_IDLE_CHECK_INTERVAL_MS = 30 * 1000; // dicek tiap 30 detik, jadi meleset paling lama ~30 detik dari 10 menit persis
+const panelLastActivity = new Map(); // channelId -> timestamp interaksi panel (non-Home) terakhir
+
+function markPanelActivity(channelId) {
+  panelLastActivity.set(channelId, Date.now());
+}
+
+async function checkPanelIdleTimeouts() {
+  const now = Date.now();
+  for (const [channelId, lastActive] of panelLastActivity.entries()) {
+    if (now - lastActive < PANEL_IDLE_TIMEOUT_MS) continue;
+
+    // Langsung dihapus dari tracking begitu ditindaklanjuti, biar nggak
+    // keproses ulang tiap interval kalau ternyata gagal/di-skip di bawah.
+    panelLastActivity.delete(channelId);
+
+    const panel = panelStore.getPanel(channelId);
+    if (!panel || !panel.panelMessageId) continue;
+    if (!panelStore.getPanelScreen(channelId)) continue; // udah di Home (misal abis dipencet manual), nggak perlu ngapa-ngapain
+
+    try {
+      const channel = await client.channels.fetch(channelId);
+      const message = await channel.messages.fetch(panel.panelMessageId);
+      const { embed, components } = buildPanelCard(client, commands.length);
+      await message.edit({ embeds: [embed], components });
+      panelStore.setPanelScreen(channelId, null);
+      log(`[PANEL] Auto-timeout: channel ${channelId} dibalikin ke Panel Utama (idle 10 menit).`);
+    } catch (err) {
+      log(`[PANEL] Gagal auto-timeout panel channel ${channelId}: ${err?.message || err}`);
+    }
+  }
+}
+
+setInterval(checkPanelIdleTimeouts, PANEL_IDLE_CHECK_INTERVAL_MS);
+
+// ============================================================
 // NAVIGASI PANEL (1 embed yang sama): panel bot (dikirim via /panel) SELALU
 // cuma 1 pesan/embed -- nggak ada balasan ephemeral terpisah buat navigasi.
 // Klik tombol apapun (Home, Featured, Musik, dst) langsung meng-update
@@ -499,11 +543,15 @@ function buildVoiceStatsEmbed(user) {
 // pesan panel di posisi paling bawah, dan tanpa snapshot ini dia bakal
 // SELALU balik ke Home (ngereset layar yang lagi dibuka user, misal lagi di
 // tengah-tengah ngurus Streak). Home sengaja NGGAK disnapshot biar
-// stats-nya (uptime/ping) tetep fresh tiap kali direposisi.
+// stats-nya (uptime/ping) tetep fresh tiap kali direposisi. Begitu balik ke
+// Home, `panelLastActivity` buat channel ini juga dibersihin (lihat
+// `opts.isHome` di bawah) -- nggak ada gunanya nge-track idle timer buat
+// layar yang emang udah di Home.
 async function respondPanelScreen(interaction, embed, components, opts = {}) {
   await interaction.update({ embeds: [embed], components });
   if (opts.isHome) {
     panelStore.setPanelScreen(interaction.channelId, null);
+    panelLastActivity.delete(interaction.channelId);
   } else {
     panelStore.setPanelScreen(interaction.channelId, {
       embed: typeof embed?.toJSON === 'function' ? embed.toJSON() : embed,
@@ -820,6 +868,17 @@ client.on('voiceStateUpdate', (oldState, newState) => {
 // Handler buat semua command: slash command (/play, /skip, dst) DAN
 // context-menu command ("Jadikan Sticky" -- klik kanan pesan > Apps).
 client.on('interactionCreate', async (interaction) => {
+  // Reset timer auto-timeout panel (lihat PANEL_IDLE_TIMEOUT_MS di atas)
+  // begitu ada interaksi APAPUN yang customId-nya punya prefix "panel"
+  // (button, modal submit, atau select menu -- semuanya emang selalu dikasih
+  // prefix ini) -- jadi selama masih ada yang mencet-mencet di layar panel
+  // manapun (Playlist, Streak, dst), timernya kepush terus, nggak
+  // ke-auto-balik ke Home. Diletakkan di paling atas biar nggak kelewatan
+  // interaksi manapun, sebelum semua percabangan di bawah.
+  if (typeof interaction.customId === 'string' && interaction.customId.startsWith('panel')) {
+    markPanelActivity(interaction.channelId);
+  }
+
   // Tombol "Join Giveaway" -- ini jenis interaksi beda (button), bukan command.
   if (interaction.isButton()) {
     if (interaction.customId === giveawayManager.JOIN_BUTTON_ID) {
