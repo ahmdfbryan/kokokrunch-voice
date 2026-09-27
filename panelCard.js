@@ -143,7 +143,9 @@ function buildFeaturedEmbed() {
   return new EmbedBuilder()
     .setColor(PANEL_COLOR)
     .setAuthor({ name: '✨  Fitur Bot' })
-    .setDescription('Pilih fitur yang mau kamu pakai di bawah ini.');
+    .setDescription(
+      '**Semua fitur tambahan Satpam Voice ada di sini.**\n\nTinggal pilih salah satu tombol di bawah buat langsung pakai fiturnya.'
+    );
 }
 
 function buildFeaturedButtons() {
@@ -206,22 +208,25 @@ function buildVoiceStatsSelectRow() {
 
 /**
  * Baris tombol pilihan buat fitur Streak, dipakai di balasan ephemeral pas
- * tombol "Streak" di panel utama diklik. "Leaderboard" nampilin ranking
- * semua grup streak di server ini (dikirim publik ke channel). 6 tombol
- * (4 aksi + Back + Home) dibagi rata 3-3 biar nggak nabrak limit 5/baris.
+ * tombol "Streak" di panel utama diklik. Dibagi 3 baris berdasarkan
+ * fungsinya (bukan asal dipepetin 3-3) biar nggak keliatan berantakan:
+ *   row1 (informasi/read-only, Secondary semua): Info Streak, Leaderboard
+ *   row2 (aksi ke grup streak sendiri): Buat Grup (Success -- bikin baru), Grup Saya (Secondary)
+ *   row3 (navigasi): Back, Home
+ * "Leaderboard" nampilin ranking semua grup streak di server ini (dikirim
+ * publik ke channel).
  */
 function buildStreakSubRow() {
   const row1 = new ActionRowBuilder().addComponents(
-    new ButtonBuilder().setCustomId('panelstreak_info').setLabel('Info Streak').setEmoji('🔥').setStyle(ButtonStyle.Danger),
+    new ButtonBuilder().setCustomId('panelstreak_info').setLabel('Info Streak').setEmoji('🔥').setStyle(ButtonStyle.Secondary),
+    new ButtonBuilder().setCustomId('panelstreak_leaderboard').setLabel('Leaderboard').setEmoji('🏆').setStyle(ButtonStyle.Secondary)
+  );
+  const row2 = new ActionRowBuilder().addComponents(
     new ButtonBuilder().setCustomId('panelstreak_create').setLabel('Buat Grup').setEmoji('➕').setStyle(ButtonStyle.Success),
     new ButtonBuilder().setCustomId('panelstreak_mygroup').setLabel('Grup Saya').setEmoji('👥').setStyle(ButtonStyle.Secondary)
   );
-  const row2 = new ActionRowBuilder().addComponents(
-    new ButtonBuilder().setCustomId('panelstreak_leaderboard').setLabel('Leaderboard').setEmoji('🏆').setStyle(ButtonStyle.Secondary),
-    buildBackButton('panel_featured'),
-    buildHomeButton()
-  );
-  return [row1, row2];
+  const row3 = new ActionRowBuilder().addComponents(buildBackButton('panel_featured'), buildHomeButton());
+  return [row1, row2, row3];
 }
 
 /**
