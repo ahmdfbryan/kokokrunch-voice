@@ -512,6 +512,24 @@ async function respondPanelScreen(interaction, embed, components, opts = {}) {
   }
 }
 
+/**
+ * Dipakai buat aksi-aksi playlist (Add, Add Antrian, Rename, Hapus Lagu) yang
+ * ngerefresh embed detail playlist-nya SENDIRI lewat
+ * `musicPlaylistCommands.refreshPlaylistDetailScreen` (bukan lewat
+ * `respondPanelScreen` di atas, soalnya ada followUp ephemeral yang ikut
+ * nyusul abis interaction.update()-nya). Callback ini yang nyimpen
+ * snapshot layar panel-nya (buat reposisi), sama persis kayak yang
+ * dilakuin `respondPanelScreen`.
+ */
+function makePanelScreenSnapshotSaver(interaction) {
+  return (embed, components) => {
+    panelStore.setPanelScreen(interaction.channelId, {
+      embed: typeof embed?.toJSON === 'function' ? embed.toJSON() : embed,
+      components: (components || []).map((row) => (typeof row?.toJSON === 'function' ? row.toJSON() : row)),
+    });
+  };
+}
+
 async function handlePanelQueue(interaction) {
   const queue = musicManager.getQueue(interaction.guildId);
   const autoplayStatus = queue.autoplayEnabled ? 'ON' : 'OFF';
@@ -978,7 +996,9 @@ client.on('interactionCreate', async (interaction) => {
         const embed = new EmbedBuilder()
           .setColor(PANEL_COLOR)
           .setAuthor({ name: '🎵  Kontrol Musik' })
-          .setDescription('Pilih aksi di bawah ini.');
+          .setDescription(
+            '**Atur musik yang lagi diputar di voice channel langsung dari sini.**\n\nPlay, Skip, Stop, cek Antrian, sampai kelola Playlist server -- tinggal pencet tombolnya di bawah.'
+          );
         await respondPanelScreen(interaction, embed, buildMusicSubRow());
       } catch (err) {
         log(`[PANEL] Error tombol panel_music: ${err?.stack || err}`);
@@ -1005,8 +1025,7 @@ client.on('interactionCreate', async (interaction) => {
         const embed = new EmbedBuilder()
           .setColor(PANEL_COLOR)
           .setAuthor({ name: '📊  Voice Stats' })
-          .setDescription('Mau tampilkan apa ke channel ini? Pilih dari dropdown di bawah.')
-          .setFooter({ text: 'Hasilnya bakal dikirim publik ke channel, bukan cuma buat kamu.' });
+          .setDescription('Mau tampilkan apa ke channel ini? Pilih dari dropdown di bawah.');
         await respondPanelScreen(interaction, embed, [buildVoiceStatsSelectRow(), buildBackAndHomeRow('panel_featured')]);
       } catch (err) {
         log(`[PANEL] Error tombol panel_voicestats: ${err?.stack || err}`);
@@ -1201,7 +1220,9 @@ client.on('interactionCreate', async (interaction) => {
         const embed = new EmbedBuilder()
           .setColor(PANEL_COLOR)
           .setAuthor({ name: '🔥  Grup Streak Chat' })
-          .setDescription('Pilih salah satu di bawah ini.');
+          .setDescription(
+            '**Bikin atau kelola grup streak chat bareng temen-temen kamu.**\n\nCek info fitur ini, bikin grup baru, lihat grup kamu sendiri, atau liat leaderboard server -- tinggal pencet tombolnya di bawah.'
+          );
         await respondPanelScreen(interaction, embed, buildStreakSubRow());
       } catch (err) {
         log(`[PANEL] Error tombol panel_streak: ${err?.stack || err}`);
@@ -1483,11 +1504,12 @@ client.on('interactionCreate', async (interaction) => {
     }
 
     // Tombol "Add" di layar detail playlist -- nambahin lagu yang lagi
-    // diputar sekarang ke playlist ini. Leaf action, ephemeral ack.
+    // diputar sekarang ke playlist ini. Begitu berhasil, embednya di-refresh
+    // di tempat (lihat musicPlaylistCommands.refreshPlaylistDetailScreen).
     if (interaction.customId.startsWith('panelplaylist_add::')) {
       try {
         const name = interaction.customId.slice('panelplaylist_add::'.length);
-        await musicPlaylistCommands.addCurrentTrackToPlaylist(interaction, name);
+        await musicPlaylistCommands.addCurrentTrackToPlaylist(interaction, name, makePanelScreenSnapshotSaver(interaction));
       } catch (err) {
         log(`[PANEL] Error tombol panelplaylist_add: ${err?.stack || err}`);
       }
@@ -1496,11 +1518,11 @@ client.on('interactionCreate', async (interaction) => {
 
     // Tombol "Add Antrian" -- nambahin SEMUA lagu yang lagi diputar + di
     // antrian sekaligus ke playlist ini (beda dari "Add" biasa yang cuma
-    // nambahin 1 lagu yang lagi diputar). Leaf action, ephemeral ack.
+    // nambahin 1 lagu yang lagi diputar).
     if (interaction.customId.startsWith('panelplaylist_addqueue::')) {
       try {
         const name = interaction.customId.slice('panelplaylist_addqueue::'.length);
-        await musicPlaylistCommands.addQueueToPlaylist(interaction, name);
+        await musicPlaylistCommands.addQueueToPlaylist(interaction, name, makePanelScreenSnapshotSaver(interaction));
       } catch (err) {
         log(`[PANEL] Error tombol panelplaylist_addqueue: ${err?.stack || err}`);
       }
@@ -1824,11 +1846,12 @@ client.on('interactionCreate', async (interaction) => {
     }
 
     // Submit modal "Rename" playlist -- nama lama dikodein di customId
-    // modal-nya (panelplaylist_rename_modal::<nama_lama>).
+    // modal-nya (panelplaylist_rename_modal::<nama_lama>). Begitu berhasil,
+    // embed layar detailnya di-refresh di tempat (nama barunya).
     if (interaction.customId.startsWith('panelplaylist_rename_modal::')) {
       try {
         const oldName = interaction.customId.slice('panelplaylist_rename_modal::'.length);
-        await musicPlaylistCommands.handleRenameModalSubmit(interaction, oldName);
+        await musicPlaylistCommands.handleRenameModalSubmit(interaction, oldName, makePanelScreenSnapshotSaver(interaction));
       } catch (err) {
         log(`[PANEL] Error submit panelplaylist_rename_modal: ${err?.stack || err}`);
       }
@@ -1837,20 +1860,12 @@ client.on('interactionCreate', async (interaction) => {
 
     // Submit modal "Hapus Lagu" -- nama playlist dikodein di customId modal-nya
     // (panelplaylist_deletetrack_modal::<nama>), nomor urut lagunya dari input
-    // teksnya. BEDA dari modal submit lain: kalau beneran kehapus, layar
-    // panel-nya di-update() di tempat (embed detail playlist di-refresh biar
-    // daftar lagunya langsung keliatan yang baru) -- jalur gagal/ditolak tetep
-    // ephemeral reply biasa. Snapshot layar panel (buat reposisi) ikut
-    // disimpen lewat callback ini, sama kayak yang dilakuin respondPanelScreen.
+    // teksnya. Kalau beneran kehapus, embed layar detailnya di-refresh di
+    // tempat -- jalur gagal/ditolak tetep ephemeral reply biasa.
     if (interaction.customId.startsWith('panelplaylist_deletetrack_modal::')) {
       try {
         const name = interaction.customId.slice('panelplaylist_deletetrack_modal::'.length);
-        await musicPlaylistCommands.handleDeleteTrackModalSubmit(interaction, name, (embed, components) => {
-          panelStore.setPanelScreen(interaction.channelId, {
-            embed: typeof embed?.toJSON === 'function' ? embed.toJSON() : embed,
-            components: (components || []).map((row) => (typeof row?.toJSON === 'function' ? row.toJSON() : row)),
-          });
-        });
+        await musicPlaylistCommands.handleDeleteTrackModalSubmit(interaction, name, makePanelScreenSnapshotSaver(interaction));
       } catch (err) {
         log(`[PANEL] Error submit panelplaylist_deletetrack_modal: ${err?.stack || err}`);
       }
