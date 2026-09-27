@@ -301,11 +301,42 @@ async function playPlaylistForPanel(interaction, name) {
 }
 
 /**
- * Tombol "Add" di layar detail playlist -- nambahin lagu yang LAGI DIPUTAR
- * sekarang ke playlist yang lagi dibuka. Ephemeral ack, nggak nge-update
- * layar panel (konsisten sama tombol leaf lain kayak Skip/Stop/Set Username).
+ * Helper bareng buat Add / Add Antrian / Rename: begitu aksinya berhasil
+ * ngubah playlist yang lagi kebuka di layar detail, embed-nya langsung
+ * di-REFRESH di tempat (`interaction.update()`) biar keliatan versi
+ * terbaru -- TERUS `message`-nya (keterangan apa yang barusan kejadian)
+ * nyusul dikirim lewat `followUp()` sebagai pesan EPHEMERAL (cuma yang
+ * mencet doang yang liat). Pola yang sama kayak yang dipakai
+ * `handleDeleteTrackModalSubmit` buat tombol "Hapus".
+ *
+ * `name` di sini HARUS nama playlist yang SEKARANG (buat Rename, ini nama
+ * BARU-nya, bukan yang lama, soalnya layar detail abis rename nunjukin
+ * playlist dengan nama barunya). `onScreenUpdated(embed, components)` --
+ * kalau dikasih -- dipanggil abis update berhasil, dipakai caller (index.js)
+ * buat nyimpen snapshot layar panel yang baru (biar reposisi panel nanti
+ * tetep nampilin versi ter-update).
  */
-async function addCurrentTrackToPlaylist(interaction, name) {
+async function refreshPlaylistDetailScreen(interaction, name, canManage, message, onScreenUpdated) {
+  const updatedEmbed = buildPlaylistDetailEmbed(interaction.guildId, name);
+  if (!updatedEmbed) {
+    // Race condition (misal playlist-nya kehapus barengan pas lagi diproses) -- fallback ephemeral biasa.
+    await interaction.reply({ embeds: [textEmbed(message)], flags: MessageFlags.Ephemeral });
+    return;
+  }
+  const updatedComponents = buildPlaylistDetailButtons(name, canManage);
+  await interaction.update({ embeds: [updatedEmbed], components: updatedComponents });
+  if (typeof onScreenUpdated === 'function') {
+    onScreenUpdated(updatedEmbed, updatedComponents);
+  }
+  await interaction.followUp({ embeds: [textEmbed(message)], flags: MessageFlags.Ephemeral });
+}
+
+/**
+ * Tombol "Add" di layar detail playlist -- nambahin lagu yang LAGI DIPUTAR
+ * sekarang ke playlist yang lagi dibuka. Begitu berhasil, embed layar
+ * detailnya langsung di-refresh di tempat (lihat `refreshPlaylistDetailScreen`).
+ */
+async function addCurrentTrackToPlaylist(interaction, name, onScreenUpdated) {
   // Playlist ini SHARED (dibuka dari layar detail playlist yang udah ADA),
   // tapi yang boleh nambahin lagu ke situ cuma pemilik/pembuatnya -- member
   // lain cuma boleh Play. Playlist "yatim" fallback ke izin Manage Server.
@@ -335,7 +366,7 @@ async function addCurrentTrackToPlaylist(interaction, name) {
     result.addedCount > 0
       ? `**${current.title}** ditambahin ke playlist **${name}** (total sekarang: ${result.trackCount} lagu).`
       : `**${current.title}** udah ada di playlist **${name}**, nggak ditambahin lagi (biar nggak dobel).`;
-  await interaction.reply({ embeds: [textEmbed(message)], flags: MessageFlags.Ephemeral });
+  await refreshPlaylistDetailScreen(interaction, name, check.allowed, message, onScreenUpdated);
 }
 
 /**
@@ -347,7 +378,7 @@ async function addCurrentTrackToPlaylist(interaction, name) {
  * otomatis dilewatin (nggak nyimpen dobel) -- makanya pesannya nyebutin
  * berapa yang beneran baru vs berapa yang dilewatin karena dobel.
  */
-async function addQueueToPlaylist(interaction, name) {
+async function addQueueToPlaylist(interaction, name, onScreenUpdated) {
   const hasManageGuild = !!interaction.memberPermissions?.has(PermissionFlagsBits.ManageGuild);
   const check = playlistStore.canDelete(interaction.guildId, name, interaction.user.id, hasManageGuild);
   if (!check.allowed) {
@@ -377,7 +408,7 @@ async function addQueueToPlaylist(interaction, name) {
   if (result.truncated) {
     message += `\n\nPlaylist udah kena batas maksimal ${playlistStore.MAX_TRACKS_PER_PLAYLIST} lagu, sisanya dipotong.`;
   }
-  await interaction.reply({ embeds: [textEmbed(message)], flags: MessageFlags.Ephemeral });
+  await refreshPlaylistDetailScreen(interaction, name, check.allowed, message, onScreenUpdated);
 }
 
 /**
@@ -481,21 +512,13 @@ async function handleDeleteTrackModalSubmit(interaction, name, onScreenUpdated) 
   // Beneran kehapus -- refresh embed detail playlist-nya di tempat, biar
   // daftar lagunya langsung keliatan yang baru (tanpa lagu yang barusan
   // dihapus), bukan cuma ngasih ephemeral ack doang.
-  const updatedEmbed = buildPlaylistDetailEmbed(interaction.guildId, name);
-  const updatedComponents = buildPlaylistDetailButtons(name, check.allowed);
-  await interaction.update({ embeds: [updatedEmbed], components: updatedComponents });
-  if (typeof onScreenUpdated === 'function') {
-    onScreenUpdated(updatedEmbed, updatedComponents);
-  }
-
-  // Keterangan lagu yang kehapus -- ephemeral (cuma pengklik yang liat),
-  // nyusul SETELAH update layar panel di atas (bukan gantiin), soalnya 1
-  // interaksi cuma bisa dibales sekali (update udah makan slot balesan
-  // utamanya), jadi ini dikirim lewat followUp().
-  await interaction.followUp({
-    embeds: [textEmbed(`🗑️ **${result.removedTitle}** dihapus dari playlist **${name}** (sisa ${result.trackCount} lagu).`)],
-    flags: MessageFlags.Ephemeral,
-  });
+  await refreshPlaylistDetailScreen(
+    interaction,
+    name,
+    check.allowed,
+    `🗑️ **${result.removedTitle}** dihapus dari playlist **${name}** (sisa ${result.trackCount} lagu).`,
+    onScreenUpdated
+  );
 }
 
 /** Modal ganti nama playlist -- nama lama dikodein di customId modalnya, input-nya di-prefill sama nama lama. */
@@ -519,7 +542,7 @@ function buildRenameModal(name) {
  * sini (bukan cuma di tombol yang munculin modalnya) buat jaga-jaga kalau
  * ada yang manggil submit modal ini langsung tanpa lewat tombol.
  */
-async function handleRenameModalSubmit(interaction, oldName) {
+async function handleRenameModalSubmit(interaction, oldName, onScreenUpdated) {
   const hasManageGuild = !!interaction.memberPermissions?.has(PermissionFlagsBits.ManageGuild);
   const check = playlistStore.canDelete(interaction.guildId, oldName, interaction.user.id, hasManageGuild);
   if (!check.allowed) {
@@ -543,10 +566,16 @@ async function handleRenameModalSubmit(interaction, oldName) {
     return;
   }
 
-  await interaction.reply({
-    embeds: [textEmbed(`✅ Playlist **${oldName}** diganti nama jadi **${newName}**.`)],
-    flags: MessageFlags.Ephemeral,
-  });
+  // Beneran keganti -- refresh embed detail playlist-nya di tempat (pakai
+  // NAMA BARU, soalnya playlist-nya sekarang ada di key itu), bukan cuma
+  // ngasih ephemeral ack doang.
+  await refreshPlaylistDetailScreen(
+    interaction,
+    newName,
+    check.allowed,
+    `✅ Playlist **${oldName}** diganti nama jadi **${newName}**.`,
+    onScreenUpdated
+  );
 }
 
 const playlistCommand = {
