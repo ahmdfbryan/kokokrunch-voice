@@ -34,7 +34,13 @@ const musicManager = require('./musicManager');
 const musicPlaylistStore = require('./musicPlaylistStore');
 const musicPlaylistCommands = require('./musicPlaylistCommands');
 const lyricsManager = require('./lyricsManager');
-const { buildNowPlayingCard, withNowPlayingLock } = require('./nowPlayingCard');
+const {
+  buildNowPlayingCard,
+  withNowPlayingLock,
+  isMessageReallyGone,
+  withTransientRetry,
+  safeDeleteTrackedMessage,
+} = require('./nowPlayingCard');
 const voiceActivity = require('./voiceActivity');
 const welcomeManager = require('./welcomeManager');
 const welcomeStore = require('./welcomeStore');
@@ -128,17 +134,31 @@ async function onTrackStart(guildId, track, opts = {}) {
     // Card "Now Playing" dibikin TETAP di posisi/pesan yang sama selama musik
     // masih nyambung terus (edit di tempat pas ganti lagu) -- bukan dihapus &
     // dikirim ulang tiap ganti lagu. Cuma bikin pesan baru kalau memang belum
-    // ada yang di-track, atau pesan lamanya udah nggak ketemu (kehapus manual dll).
+    // ada yang di-track, atau pesan lamanya KONFIRMED udah nggak ketemu
+    // (kehapus manual dll) -- `withTransientRetry` nyoba ulang dulu (2x,
+    // jeda singkat) kalau gagalnya cuma gangguan sesaat (rate limit/network
+    // blip), biar nggak buru-buru nganggep pesannya hilang padahal masih ada.
     const oldMsg = musicManager.getNowPlayingMessage(guildId);
     if (oldMsg) {
       try {
-        const oldChannel = await client.channels.fetch(oldMsg.channelId);
-        const oldMessage = await oldChannel.messages.fetch(oldMsg.messageId);
-        const { embed, components } = buildNowPlayingCard(guildId);
-        await oldMessage.edit({ embeds: [embed], components });
+        await withTransientRetry(async () => {
+          const oldChannel = await client.channels.fetch(oldMsg.channelId);
+          const oldMessage = await oldChannel.messages.fetch(oldMsg.messageId);
+          const { embed, components } = buildNowPlayingCard(guildId);
+          await oldMessage.edit({ embeds: [embed], components });
+        });
         return;
-      } catch {
-        // Pesan lama nggak ketemu -> lanjut ke bawah, bikin pesan baru
+      } catch (err) {
+        // Konfirmed hilang ATAU gagal lagi walau udah di-retry -- kedua
+        // kasus ini lanjut ke bawah, bikin pesan baru. Bedanya: kalau BUKAN
+        // konfirmed hilang (cuma gangguan sesaat yang keburu kena limit
+        // retry), coba hapus dulu pesan lama itu secara aktif (best-effort)
+        // sebelum bikin yang baru -- soalnya bisa jadi dia masih ada, dan
+        // kita nggak mau ninggalin itu jadi "jejak" nyangkut di channel.
+        if (!isMessageReallyGone(err)) {
+          log(`[NOWPLAYING] Gagal edit card lama (${err?.code || err?.message}), coba hapus manual dulu sebagai jaga-jaga.`);
+          await safeDeleteTrackedMessage(client, oldMsg.channelId, oldMsg.messageId);
+        }
       }
     }
 
@@ -188,8 +208,11 @@ async function onQueueEmpty(guildId, opts = {}) {
  * Refresh (edit) card "Now Playing" yang lagi kebuka (kalau ada), biar
  * progress bar / status tombolnya update. Dipanggil pas track ganti, pas
  * antrian abis, DAN secara berkala lewat interval (lihat startNowPlayingRefreshLoop).
- * Kalau pesannya udah kehapus / channel nggak ketemu, referensinya dibersihin
- * biar nggak terus-terusan dicoba di refresh berikutnya.
+ * Kalau pesannya KONFIRMED kehapus / channel nggak ketemu, referensinya
+ * dibersihin biar nggak terus-terusan dicoba di refresh berikutnya --
+ * `withTransientRetry` nyoba ulang dulu (2x, jeda singkat) buat gangguan
+ * sesaat, biar refresh berkala ini nggak gampang "nyerah" & nganggep
+ * pesannya hilang padahal masih kebuka normal di channel.
  */
 async function refreshNowPlayingCard(guildId) {
   await withNowPlayingLock(guildId, async () => {
@@ -197,10 +220,12 @@ async function refreshNowPlayingCard(guildId) {
     if (!npMsg) return;
 
     try {
-      const channel = await client.channels.fetch(npMsg.channelId);
-      const message = await channel.messages.fetch(npMsg.messageId);
-      const { embed, components } = buildNowPlayingCard(guildId);
-      await message.edit({ embeds: [embed], components });
+      await withTransientRetry(async () => {
+        const channel = await client.channels.fetch(npMsg.channelId);
+        const message = await channel.messages.fetch(npMsg.messageId);
+        const { embed, components } = buildNowPlayingCard(guildId);
+        await message.edit({ embeds: [embed], components });
+      });
 
       // Kalau udah nggak ada musik yang main, berarti card ini "final" --
       // nggak perlu di-refresh berkala lagi sampai ada /nowplaying baru.
@@ -208,7 +233,13 @@ async function refreshNowPlayingCard(guildId) {
         musicManager.setNowPlayingMessage(guildId, null, null);
       }
     } catch (err) {
-      log(`[NOWPLAYING] Gagal refresh card, berhenti nge-track pesan ini: ${err.message}`);
+      // Konfirmed hilang ATAU gagal lagi walau udah di-retry -- berhenti
+      // nge-track pesan ini. SENGAJA nggak dihapus manual di sini: kalau
+      // bukan konfirmed hilang (cuma gangguan sesaat yang persist), pesan
+      // lamanya kemungkinan masih valid & kebuka normal, cuma kebetulan
+      // nggak keedit kali ini -- lebih aman dibiarin apa adanya daripada
+      // dihapus paksa.
+      log(`[NOWPLAYING] Gagal refresh card (${err?.code || err?.message}), berhenti nge-track pesan ini.`);
       musicManager.setNowPlayingMessage(guildId, null, null);
     }
   });
