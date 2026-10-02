@@ -107,6 +107,64 @@ function withNowPlayingLock(guildId, fn) {
   return next;
 }
 
+// ============================================================
+// RETRY & "BENERAN HILANG vs GANGGUAN SESAAT": dulu, kalau fetch/edit pesan
+// Now Playing GAGAL karena alasan APAPUN (rate limit, network blip, Discord
+// lagi 500/503, dst), bot langsung nganggep "pesannya udah kehapus" dan
+// lepas tangan (bikin card baru / berhenti nge-track) -- padahal pesan
+// lamanya bisa aja masih ada, cuma gagal diedit SESAAT doang. Itu yang
+// ninggalin "jejak" card lama yang beku nyangkut di channel. 2 helper di
+// bawah ini misahin kasusnya:
+//   - isMessageReallyGone: TRUE cuma kalau kode errornya KONFIRMED dari
+//     Discord ("Unknown Message" / "Unknown Channel") -- selain itu
+//     dianggap gangguan sesaat.
+//   - withTransientRetry: bungkus operasi fetch/edit, retry otomatis (2x,
+//     jeda singkat) KHUSUS buat error yang BUKAN konfirmed hilang. Kalau
+//     ketemu error yang konfirmed hilang, langsung dilempar lagi tanpa
+//     nunggu (nggak ada gunanya retry, pesannya DEFINITELY udah nggak ada).
+//     Retry-nya dibatasi jumlahnya (bukan nunggu selamanya) dan nggak
+//     nambah timer/listener baru -- jadi nggak ada risiko jadi loop kayak
+//     masalah reposisi panel/Now Playing yang dulu (itu sumbernya beda,
+//     dari `messageCreate` yang kedetect balik, bukan dari sini).
+const TRANSIENT_RETRY_DELAYS_MS = [500, 1500]; // percobaan ke-2 & ke-3 doang yang pakai jeda, percobaan pertama langsung
+
+function isMessageReallyGone(err) {
+  return err?.code === 10008 || err?.code === 10003; // Unknown Message / Unknown Channel
+}
+
+async function withTransientRetry(fn) {
+  let lastErr;
+  for (let attempt = 0; attempt <= TRANSIENT_RETRY_DELAYS_MS.length; attempt++) {
+    try {
+      return await fn();
+    } catch (err) {
+      if (isMessageReallyGone(err)) throw err; // konfirmed hilang -- nggak perlu nunggu, langsung nyerah
+      lastErr = err;
+      if (attempt < TRANSIENT_RETRY_DELAYS_MS.length) {
+        await new Promise((resolve) => setTimeout(resolve, TRANSIENT_RETRY_DELAYS_MS[attempt]));
+      }
+    }
+  }
+  throw lastErr;
+}
+
+/**
+ * Coba hapus 1 pesan (by channelId + messageId), best-effort -- dipakai pas
+ * mau "lepas tangan" dari sebuah card Now Playing yang gagal di-edit
+ * (walau udah di-retry) TAPI bukan karena konfirmed udah hilang. Jaga-jaga
+ * biar pesan itu nggak nyangkut jadi jejak kalau ternyata masih ada di
+ * channel, cuma kebetulan gagal diedit gara-gara gangguan sesaat.
+ */
+async function safeDeleteTrackedMessage(client, channelId, messageId) {
+  try {
+    const channel = await client.channels.fetch(channelId);
+    const message = await channel.messages.fetch(messageId);
+    await message.delete();
+  } catch {
+    // udah kehapus / nggak ketemu / gagal lagi -- diabaikan, ini emang cuma best-effort
+  }
+}
+
 /**
  * Buat/timpa card Now Playing khusus lewat jalur COMMAND (/play langsung
  * main, /playlist play, /nowplaying) -- beda dari update yang dipicu
@@ -125,11 +183,14 @@ async function claimNowPlayingCard(guildId, client, sendFn) {
     const oldMsg = musicManager.getNowPlayingMessage(guildId);
     if (oldMsg) {
       try {
-        const oldChannel = await client.channels.fetch(oldMsg.channelId);
-        const oldMessage = await oldChannel.messages.fetch(oldMsg.messageId);
-        await oldMessage.delete();
+        await withTransientRetry(async () => {
+          const oldChannel = await client.channels.fetch(oldMsg.channelId);
+          const oldMessage = await oldChannel.messages.fetch(oldMsg.messageId);
+          await oldMessage.delete();
+        });
       } catch {
-        // udah kehapus / nggak ketemu, aman diabaikan
+        // udah kehapus / nggak ketemu, ATAU gagal lagi walau udah di-retry --
+        // kedua kasus ini aman diabaikan (best-effort), lanjut kirim card baru di bawah
       }
     }
 
@@ -140,4 +201,11 @@ async function claimNowPlayingCard(guildId, client, sendFn) {
   });
 }
 
-module.exports = { buildNowPlayingCard, withNowPlayingLock, claimNowPlayingCard };
+module.exports = {
+  buildNowPlayingCard,
+  withNowPlayingLock,
+  claimNowPlayingCard,
+  isMessageReallyGone,
+  withTransientRetry,
+  safeDeleteTrackedMessage,
+};
