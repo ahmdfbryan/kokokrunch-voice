@@ -1221,7 +1221,16 @@ client.on('interactionCreate', async (interaction) => {
     if (interaction.customId === 'panel_tiktok_disable') {
       try {
         tiktokLive.clearUsername();
-        await interaction.reply({
+        // Sama kayak pola Add Antrian/Hapus Playlist: embed panel-nya
+        // langsung di-REFRESH di tempat (status jadi "Belum ada live yang
+        // dipantau") lewat interaction.update(), terus keterangan "berhasil
+        // dimatikan" nyusul lewat followUp ephemeral (cuma yang mencet doang
+        // yang liat) -- bukan cuma reply ephemeral doang kayak sebelumnya.
+        const embed = tiktokLive.buildTiktokInfoEmbed();
+        const components = [buildTiktokSubRow(tiktokLive.getStatus())];
+        await interaction.update({ embeds: [embed], components });
+        makePanelScreenSnapshotSaver(interaction)(embed, components);
+        await interaction.followUp({
           content: '✅ Fitur request musik TikTok LIVE dimatikan.',
           flags: MessageFlags.Ephemeral,
         });
@@ -1868,13 +1877,25 @@ client.on('interactionCreate', async (interaction) => {
         const raw = interaction.fields.getTextInputValue('panel_tiktok_username');
         const result = tiktokLive.setUsername(raw, interaction.user.tag);
         if (!result.ok) {
+          // Validasi gagal -- status TikTok-nya nggak berubah, jadi nggak
+          // ada yang perlu di-refresh, cukup reply ephemeral biasa.
           await interaction.reply({
             content: 'Username TikTok nggak valid. Cuma boleh huruf, angka, titik, underscore, 2-24 karakter (tanpa @).',
             flags: MessageFlags.Ephemeral,
           });
           return;
         }
-        await interaction.reply({
+        // Sama kayak pola Add Antrian/Rename: embed panel-nya langsung
+        // di-REFRESH di tempat (nunjukin username baru) lewat
+        // interaction.update(), terus keterangan "berhasil di-set" nyusul
+        // lewat followUp ephemeral -- bukan cuma reply ephemeral doang
+        // kayak sebelumnya (modal submit dari tombol panel tetep bisa
+        // .update() ke pesan panel aslinya, sama kayak panelplaylist_rename_modal).
+        const embed = tiktokLive.buildTiktokInfoEmbed();
+        const components = [buildTiktokSubRow(tiktokLive.getStatus())];
+        await interaction.update({ embeds: [embed], components });
+        makePanelScreenSnapshotSaver(interaction)(embed, components);
+        await interaction.followUp({
           embeds: [
             new EmbedBuilder()
               .setColor(0x57f287)
