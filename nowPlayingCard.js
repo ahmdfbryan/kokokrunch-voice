@@ -1,6 +1,5 @@
 const { EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle } = require('discord.js');
 const musicManager = require('./musicManager');
-const botBranding = require('./botBranding');
 
 const COLOR = 0x5865f2;
 
@@ -55,7 +54,6 @@ function buildNowPlayingCard(guildId) {
     .setDescription(`👤 Added by **${track.requestedBy}**${track.isAutoplay ? '  •  _via Autoplay_' : ''}`)
     .setThumbnail(track.thumbnail || null)
     .addFields({ name: '\u200b', value: `**${formatTime(elapsed)}** ${bar} **${formatTime(total)}**` });
-  botBranding.applyBrandFooter(embed);
 
   // Judul jadi link ke video aslinya -- tapi cuma kalau url-nya beneran
   // valid http(s), biar nggak crash kalau ada data track yang nggak lengkap.
