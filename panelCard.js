@@ -104,7 +104,6 @@ function buildHomeEmbed(client, commandCount) {
       ].join('\n')
     )
     .setThumbnail(botAvatarURL || null)
-    .setFooter({ text: 'Satpam Voice', iconURL: botAvatarURL || undefined })
     .setTimestamp();
 }
 
