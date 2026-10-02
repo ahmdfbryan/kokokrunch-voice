@@ -103,8 +103,7 @@ function buildHomeEmbed(client, commandCount) {
         '> **Made by `Satpam Voice`**',
       ].join('\n')
     )
-    .setThumbnail(botAvatarURL || null)
-    .setTimestamp();
+    .setThumbnail(botAvatarURL || null);
 }
 
 /**
