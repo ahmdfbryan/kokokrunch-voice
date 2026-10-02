@@ -71,8 +71,13 @@ const {
   buildTiktokSubRow,
   buildGiveawaySubRow,
   buildAskRow,
+  buildVoiceControlRows,
+  buildVoiceControlAccessRows,
+  buildVoiceControlOwnershipRows,
   PANEL_COLOR,
 } = require('./panelCard');
+const voiceControlStore = require('./voiceControlStore');
+const voiceControlManager = require('./voiceControlManager');
 const streakStore = require('./streakStore');
 const streakManager = require('./streakManager');
 const idCardStore = require('./idCardStore');
@@ -609,6 +614,29 @@ function makePanelScreenSnapshotSaver(interaction) {
   };
 }
 
+/**
+ * Voice Control SELALU nunjuk ke 1 channel voice fix yang sama (tempat
+ * Satpam Voice nongkrong 24/7, config.voiceChannelId) -- BUKAN sistem
+ * "Join to Create" multi-channel.
+ */
+async function fetchVoiceControlChannel() {
+  return client.channels.fetch(config.voiceChannelId);
+}
+
+/** Bangun ulang embed + baris tombol layar utama Voice Control, dipakai pas pertama dibuka maupun tiap kali di-refresh abis sebuah aksi. */
+async function buildVoiceControlScreen(member) {
+  const channel = await fetchVoiceControlChannel();
+  const embed = voiceControlManager.buildVoiceControlEmbed(channel, member);
+  const perms = {
+    canClaim: voiceControlManager.canClaimOwnership(channel.id, member),
+    canManage: voiceControlManager.canManage(channel.id, member),
+    canManageOwnership: voiceControlManager.canManageOwnership(channel.id, member),
+  };
+  const locked = voiceControlManager.isChannelLocked(channel);
+  const components = buildVoiceControlRows(perms, locked);
+  return { channel, embed, components };
+}
+
 async function handlePanelQueue(interaction) {
   const queue = musicManager.getQueue(interaction.guildId);
   const autoplayStatus = queue.autoplayEnabled ? 'ON' : 'OFF';
@@ -650,6 +678,7 @@ stickyMessage.load();
 stickyManager.init(client, log);
 panelStore.load();
 streakStore.load();
+voiceControlStore.load();
 idCardStore.load();
 welcomeStore.load();
 aiChat.init(log);
@@ -1309,6 +1338,153 @@ client.on('interactionCreate', async (interaction) => {
     }
 
     // ============================================================
+    // VOICE CONTROL: tombol "Voice Control" di Featured -> munculin layar
+    // kontrol buat channel voice fix Satpam Voice (rename/status/manage
+    // akses/lock-unlock/transfer kepemilikan). Owner+Manager model: Owner
+    // (diklaim lewat tombol, atau ditransfer) + Manager (ditambahin Owner)
+    // sama-sama boleh pakai aksi harian, tapi CUMA Owner (atau
+    // Administrator sebagai override darurat) yang boleh atur daftar
+    // Manager & transfer kepemilikan.
+    // ============================================================
+    if (interaction.customId === 'panel_voicecontrol') {
+      try {
+        const { embed, components } = await buildVoiceControlScreen(interaction.member);
+        await respondPanelScreen(interaction, embed, components);
+      } catch (err) {
+        log(`[PANEL] Error tombol panel_voicecontrol: ${err?.stack || err}`);
+      }
+      return;
+    }
+
+    if (interaction.customId === 'panelvc_claim') {
+      try {
+        const channel = await fetchVoiceControlChannel();
+        if (!voiceControlManager.canClaimOwnership(channel.id, interaction.member)) {
+          await interaction.reply({
+            content: 'Nggak bisa klaim: udah ada owner, atau kamu nggak punya izin Manage Channels.',
+            flags: MessageFlags.Ephemeral,
+          });
+          return;
+        }
+        await voiceControlManager.claimOwnership(channel, interaction.member);
+        const { embed, components } = await buildVoiceControlScreen(interaction.member);
+        await interaction.update({ embeds: [embed], components });
+        makePanelScreenSnapshotSaver(interaction)(embed, components);
+        await interaction.followUp({ content: '✅ Kamu sekarang jadi owner channel voice ini.', flags: MessageFlags.Ephemeral });
+      } catch (err) {
+        log(`[PANEL] Error tombol panelvc_claim: ${err?.stack || err}`);
+      }
+      return;
+    }
+
+    if (interaction.customId === 'panelvc_rename') {
+      try {
+        const channel = await fetchVoiceControlChannel();
+        if (!voiceControlManager.canManage(channel.id, interaction.member)) {
+          await interaction.reply({ content: 'Cuma Owner/Manager channel ini yang bisa rename.', flags: MessageFlags.Ephemeral });
+          return;
+        }
+        const modal = new ModalBuilder().setCustomId('panelvc_rename_modal').setTitle('Rename Voice Channel');
+        const nameInput = new TextInputBuilder()
+          .setCustomId('panelvc_rename_name')
+          .setLabel('Nama channel baru')
+          .setStyle(TextInputStyle.Short)
+          .setRequired(true)
+          .setMaxLength(100)
+          .setPlaceholder(channel.name || 'misal: Lounge Satpam Voice');
+        modal.addComponents(new ActionRowBuilder().addComponents(nameInput));
+        await interaction.showModal(modal);
+      } catch (err) {
+        log(`[PANEL] Error tombol panelvc_rename: ${err?.stack || err}`);
+      }
+      return;
+    }
+
+    if (interaction.customId === 'panelvc_status') {
+      try {
+        const channel = await fetchVoiceControlChannel();
+        if (!voiceControlManager.canManage(channel.id, interaction.member)) {
+          await interaction.reply({ content: 'Cuma Owner/Manager channel ini yang bisa ganti status.', flags: MessageFlags.Ephemeral });
+          return;
+        }
+        const modal = new ModalBuilder().setCustomId('panelvc_status_modal').setTitle('Set Voice Status');
+        const statusInput = new TextInputBuilder()
+          .setCustomId('panelvc_status_text')
+          .setLabel('Status (kosongin buat hapus)')
+          .setStyle(TextInputStyle.Short)
+          .setRequired(false)
+          .setMaxLength(500)
+          .setPlaceholder('misal: Lagi dengerin lofi santai');
+        modal.addComponents(new ActionRowBuilder().addComponents(statusInput));
+        await interaction.showModal(modal);
+      } catch (err) {
+        log(`[PANEL] Error tombol panelvc_status: ${err?.stack || err}`);
+      }
+      return;
+    }
+
+    if (interaction.customId === 'panelvc_lock_toggle') {
+      try {
+        const channel = await fetchVoiceControlChannel();
+        if (!voiceControlManager.canManage(channel.id, interaction.member)) {
+          await interaction.reply({ content: 'Cuma Owner/Manager channel ini yang bisa lock/unlock.', flags: MessageFlags.Ephemeral });
+          return;
+        }
+        const result = await voiceControlManager.toggleLock(channel);
+        const { embed, components } = await buildVoiceControlScreen(interaction.member);
+        await interaction.update({ embeds: [embed], components });
+        makePanelScreenSnapshotSaver(interaction)(embed, components);
+        await interaction.followUp({
+          content: result.locked ? '🔒 Channel voice dikunci.' : '🔓 Channel voice dibuka.',
+          flags: MessageFlags.Ephemeral,
+        });
+      } catch (err) {
+        log(`[PANEL] Error tombol panelvc_lock_toggle: ${err?.stack || err}`);
+      }
+      return;
+    }
+
+    // "Kelola Akses" dibuka sebagai balasan ephemeral TERPISAH (nggak
+    // nimpa panel sticky utama) -- sama pola kayak Streak "Grup Saya".
+    if (interaction.customId === 'panelvc_access') {
+      try {
+        const channel = await fetchVoiceControlChannel();
+        if (!voiceControlManager.canManage(channel.id, interaction.member)) {
+          await interaction.reply({ content: 'Cuma Owner/Manager channel ini yang bisa kelola akses.', flags: MessageFlags.Ephemeral });
+          return;
+        }
+        const embed = new EmbedBuilder()
+          .setColor(PANEL_COLOR)
+          .setAuthor({ name: '🛂  Kelola Akses' })
+          .setDescription('Pilih member di dropdown buat izinkan masuk, blokir & keluarkan, atau hapus izin/buka blokir.');
+        await interaction.reply({ embeds: [embed], components: buildVoiceControlAccessRows(), flags: MessageFlags.Ephemeral });
+      } catch (err) {
+        log(`[PANEL] Error tombol panelvc_access: ${err?.stack || err}`);
+      }
+      return;
+    }
+
+    // "Kelola Kepemilikan" juga ephemeral terpisah, tapi Owner-only (beda
+    // dari Kelola Akses yang boleh dipakai Manager juga).
+    if (interaction.customId === 'panelvc_ownership') {
+      try {
+        const channel = await fetchVoiceControlChannel();
+        if (!voiceControlManager.canManageOwnership(channel.id, interaction.member)) {
+          await interaction.reply({ content: 'Cuma Owner channel ini yang bisa atur manager/transfer kepemilikan.', flags: MessageFlags.Ephemeral });
+          return;
+        }
+        const embed = new EmbedBuilder()
+          .setColor(PANEL_COLOR)
+          .setAuthor({ name: '👑  Kelola Kepemilikan' })
+          .setDescription('Pilih member di dropdown buat nambah manager, hapus manager, atau transfer kepemilikan channel ini.');
+        await interaction.reply({ embeds: [embed], components: buildVoiceControlOwnershipRows(), flags: MessageFlags.Ephemeral });
+      } catch (err) {
+        log(`[PANEL] Error tombol panelvc_ownership: ${err?.stack || err}`);
+      }
+      return;
+    }
+
+    // ============================================================
     // STREAK: tombol "Streak" di panel utama -> munculin 3 pilihan
     // (Streak/info, Buat Grup, Grup Saya). Deteksi checkin-nya sendiri
     // jalan otomatis lewat listener messageCreate di atas, nggak ada
@@ -1911,6 +2087,51 @@ client.on('interactionCreate', async (interaction) => {
       return;
     }
 
+    if (interaction.customId === 'panelvc_rename_modal') {
+      try {
+        const channel = await fetchVoiceControlChannel();
+        if (!voiceControlManager.canManage(channel.id, interaction.member)) {
+          await interaction.reply({ content: 'Cuma Owner/Manager channel ini yang bisa rename.', flags: MessageFlags.Ephemeral });
+          return;
+        }
+        const newName = interaction.fields.getTextInputValue('panelvc_rename_name')?.trim();
+        if (!newName) {
+          await interaction.reply({ content: 'Nama channel nggak boleh kosong.', flags: MessageFlags.Ephemeral });
+          return;
+        }
+        await voiceControlManager.renameChannel(channel, newName, `Voice Control: rename oleh ${interaction.user.tag}`);
+        const { embed, components } = await buildVoiceControlScreen(interaction.member);
+        await interaction.update({ embeds: [embed], components });
+        makePanelScreenSnapshotSaver(interaction)(embed, components);
+        await interaction.followUp({ content: `✅ Channel di-rename jadi **${newName}**.`, flags: MessageFlags.Ephemeral });
+      } catch (err) {
+        log(`[PANEL] Error panelvc_rename_modal: ${err?.stack || err}`);
+      }
+      return;
+    }
+
+    if (interaction.customId === 'panelvc_status_modal') {
+      try {
+        const channel = await fetchVoiceControlChannel();
+        if (!voiceControlManager.canManage(channel.id, interaction.member)) {
+          await interaction.reply({ content: 'Cuma Owner/Manager channel ini yang bisa ganti status.', flags: MessageFlags.Ephemeral });
+          return;
+        }
+        const statusText = interaction.fields.getTextInputValue('panelvc_status_text')?.trim() || null;
+        await voiceControlManager.setChannelStatus(client, channel, statusText);
+        const { embed, components } = await buildVoiceControlScreen(interaction.member);
+        await interaction.update({ embeds: [embed], components });
+        makePanelScreenSnapshotSaver(interaction)(embed, components);
+        await interaction.followUp({
+          content: statusText ? `✅ Voice status di-set ke: **${statusText}**` : '✅ Voice status dihapus.',
+          flags: MessageFlags.Ephemeral,
+        });
+      } catch (err) {
+        log(`[PANEL] Error panelvc_status_modal: ${err?.stack || err}`);
+      }
+      return;
+    }
+
     if (interaction.customId === 'panel_giveaway_modal') {
       try {
         const prize = interaction.fields.getTextInputValue('panel_gw_prize')?.trim();
@@ -2035,6 +2256,106 @@ client.on('interactionCreate', async (interaction) => {
   // Picker "Invite member" (owner only) dari tombol Grup Saya -- pilih 1
   // orang lewat native user picker Discord, langsung ditambahin ke grup.
   if (interaction.isUserSelectMenu()) {
+    if (interaction.customId === 'panelvc_access_allow' || interaction.customId === 'panelvc_access_block' || interaction.customId === 'panelvc_access_clear') {
+      try {
+        const channel = await fetchVoiceControlChannel();
+        if (!voiceControlManager.canManage(channel.id, interaction.member)) {
+          await interaction.update({
+            embeds: [new EmbedBuilder().setColor(0x99aab5).setDescription('Kamu bukan Owner/Manager channel ini lagi.')],
+            components: [],
+          });
+          return;
+        }
+
+        const selected = interaction.members?.first() || interaction.users?.first();
+        if (!selected) {
+          await interaction.reply({ content: 'Nggak ada member yang dipilih.', flags: MessageFlags.Ephemeral });
+          return;
+        }
+
+        let resultText;
+        if (interaction.customId === 'panelvc_access_allow') {
+          await voiceControlManager.allowMember(channel, selected);
+          resultText = `✅ <@${selected.id}> sekarang diizinkan masuk walau channel dikunci.`;
+        } else if (interaction.customId === 'panelvc_access_block') {
+          const result = await voiceControlManager.blockMember(channel, selected);
+          if (!result.ok && result.reason === 'cannot_block_self') {
+            await interaction.reply({ content: 'Nggak bisa blokir bot sendiri.', flags: MessageFlags.Ephemeral });
+            return;
+          }
+          resultText = `⛔ <@${selected.id}> diblokir & dikeluarkan dari channel ini.`;
+        } else {
+          await voiceControlManager.clearMemberOverride(channel, selected);
+          resultText = `♻️ Izin/blokir <@${selected.id}> buat channel ini udah dihapus (balik ke default).`;
+        }
+
+        await interaction.update({
+          embeds: [new EmbedBuilder().setColor(0x57f287).setDescription(resultText)],
+          components: buildVoiceControlAccessRows(),
+        });
+      } catch (err) {
+        log(`[PANEL] Error Kelola Akses Voice Control: ${err?.stack || err}`);
+      }
+      return;
+    }
+
+    if (
+      interaction.customId === 'panelvc_ownership_addmanager' ||
+      interaction.customId === 'panelvc_ownership_removemanager' ||
+      interaction.customId === 'panelvc_ownership_transfer'
+    ) {
+      try {
+        const channel = await fetchVoiceControlChannel();
+        if (!voiceControlManager.canManageOwnership(channel.id, interaction.member)) {
+          await interaction.update({
+            embeds: [new EmbedBuilder().setColor(0x99aab5).setDescription('Kamu bukan Owner channel ini lagi.')],
+            components: [],
+          });
+          return;
+        }
+
+        const selectedMember = interaction.members?.first();
+        const selectedUser = interaction.users?.first();
+        if (!selectedUser) {
+          await interaction.reply({ content: 'Nggak ada member yang dipilih.', flags: MessageFlags.Ephemeral });
+          return;
+        }
+        if (selectedUser.bot) {
+          await interaction.reply({ content: 'Nggak bisa pilih bot.', flags: MessageFlags.Ephemeral });
+          return;
+        }
+
+        let resultText;
+        if (interaction.customId === 'panelvc_ownership_addmanager') {
+          const result = await voiceControlManager.addManager(channel, selectedMember || selectedUser);
+          if (!result.ok) {
+            const reasonText = result.reason === 'is_owner' ? 'User itu udah jadi owner.' : 'User itu udah jadi manager.';
+            await interaction.reply({ content: reasonText, flags: MessageFlags.Ephemeral });
+            return;
+          }
+          resultText = `✅ <@${selectedUser.id}> sekarang jadi manager channel ini.`;
+        } else if (interaction.customId === 'panelvc_ownership_removemanager') {
+          const result = await voiceControlManager.removeManager(channel, selectedUser);
+          if (!result.ok) {
+            await interaction.reply({ content: 'User itu bukan manager channel ini.', flags: MessageFlags.Ephemeral });
+            return;
+          }
+          resultText = `✅ <@${selectedUser.id}> dicopot dari manager channel ini.`;
+        } else {
+          await voiceControlManager.transferOwnership(channel, selectedMember || selectedUser);
+          resultText = `👑 Kepemilikan channel ini ditransfer ke <@${selectedUser.id}>.`;
+        }
+
+        await interaction.update({
+          embeds: [new EmbedBuilder().setColor(0x57f287).setDescription(resultText)],
+          components: buildVoiceControlOwnershipRows(),
+        });
+      } catch (err) {
+        log(`[PANEL] Error Kelola Kepemilikan Voice Control: ${err?.stack || err}`);
+      }
+      return;
+    }
+
     if (interaction.customId === 'panelstreak_invite_select') {
       try {
         const group = streakStore.getGroupByOwner(interaction.guildId, interaction.user.id);
