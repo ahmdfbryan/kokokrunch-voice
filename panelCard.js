@@ -4,6 +4,7 @@ const {
   ButtonBuilder,
   ButtonStyle,
   StringSelectMenuBuilder,
+  UserSelectMenuBuilder,
 } = require('discord.js');
 
 const PANEL_COLOR = 0x3b82f6; // biru, senada sama warna ID Card & tema Satpam Voice
@@ -161,6 +162,7 @@ function buildFeaturedButtons() {
   // enak dipandang, jadi disatuin lagi).
   const row2 = new ActionRowBuilder().addComponents(
     new ButtonBuilder().setCustomId('panel_voicestats').setLabel('Voice Stats').setEmoji('📊').setStyle(ButtonStyle.Secondary),
+    new ButtonBuilder().setCustomId('panel_voicecontrol').setLabel('Voice Control').setEmoji('🎛️').setStyle(ButtonStyle.Secondary),
     buildHomeButton()
   );
   return [row1, row2];
@@ -293,6 +295,120 @@ function buildAskRow() {
   );
 }
 
+/**
+ * Baris tombol buat layar utama Voice Control, dipakai di balasan ephemeral
+ * pas tombol "Voice Control" di Featured diklik. Dibagi 4 baris:
+ *   row1: Klaim Kepemilikan (cuma aktif kalau belum ada owner & clicker
+ *         punya izin Manage Channels/Administrator)
+ *   row2: Rename, Set Status, Lock/Unlock (aktif buat Owner+Manager)
+ *   row3: Kelola Akses, Kelola Kepemilikan (Kelola Kepemilikan Owner-only)
+ *   row4: Back, Home
+ * `perms` = { canClaim, canManage, canManageOwnership } (dari
+ * voiceControlManager.js), `locked` = status kunci channel saat ini (buat
+ * nentuin label+warna tombol toggle, sama pola kayak AutoPlay On/Off).
+ */
+function buildVoiceControlRows(perms, locked) {
+  const row1 = new ActionRowBuilder().addComponents(
+    new ButtonBuilder()
+      .setCustomId('panelvc_claim')
+      .setLabel('Klaim Kepemilikan')
+      .setEmoji('🙋')
+      .setStyle(ButtonStyle.Success)
+      .setDisabled(!perms.canClaim)
+  );
+  const row2 = new ActionRowBuilder().addComponents(
+    new ButtonBuilder()
+      .setCustomId('panelvc_rename')
+      .setLabel('Rename')
+      .setEmoji('✏️')
+      .setStyle(ButtonStyle.Secondary)
+      .setDisabled(!perms.canManage),
+    new ButtonBuilder()
+      .setCustomId('panelvc_status')
+      .setLabel('Set Status')
+      .setEmoji('💬')
+      .setStyle(ButtonStyle.Secondary)
+      .setDisabled(!perms.canManage),
+    new ButtonBuilder()
+      .setCustomId('panelvc_lock_toggle')
+      .setLabel(locked ? 'Unlock' : 'Lock')
+      .setEmoji(locked ? '🔓' : '🔒')
+      .setStyle(locked ? ButtonStyle.Success : ButtonStyle.Danger)
+      .setDisabled(!perms.canManage)
+  );
+  const row3 = new ActionRowBuilder().addComponents(
+    new ButtonBuilder()
+      .setCustomId('panelvc_access')
+      .setLabel('Kelola Akses')
+      .setEmoji('🛂')
+      .setStyle(ButtonStyle.Secondary)
+      .setDisabled(!perms.canManage),
+    new ButtonBuilder()
+      .setCustomId('panelvc_ownership')
+      .setLabel('Kelola Kepemilikan')
+      .setEmoji('👑')
+      .setStyle(ButtonStyle.Secondary)
+      .setDisabled(!perms.canManageOwnership)
+  );
+  const row4 = new ActionRowBuilder().addComponents(buildBackButton('panel_featured'), buildHomeButton());
+  return [row1, row2, row3, row4];
+}
+
+/**
+ * Layar ephemeral TERPISAH "Kelola Akses" (dibuka dari tombol
+ * panelvc_access, NGGAK nimpa panel sticky utama -- pola yang sama kayak
+ * Streak "Grup Saya" -> invite member). 3 UserSelectMenu buat Izinkan
+ * Masuk / Blokir & Keluarkan / Hapus Izin-Buka Blokir, tiap pilih user
+ * langsung diproses sama handler isUserSelectMenu() masing-masing di
+ * index.js, lalu balasan ephemeral ini di-update() ulang (refresh, bukan
+ * bikin pesan baru) buat konfirmasi.
+ */
+function buildVoiceControlAccessRows() {
+  const allowRow = new ActionRowBuilder().addComponents(
+    new UserSelectMenuBuilder()
+      .setCustomId('panelvc_access_allow')
+      .setPlaceholder('🟢 Izinkan Masuk -- pilih member')
+  );
+  const blockRow = new ActionRowBuilder().addComponents(
+    new UserSelectMenuBuilder()
+      .setCustomId('panelvc_access_block')
+      .setPlaceholder('⛔ Blokir & Keluarkan -- pilih member')
+  );
+  const clearRow = new ActionRowBuilder().addComponents(
+    new UserSelectMenuBuilder()
+      .setCustomId('panelvc_access_clear')
+      .setPlaceholder('♻️ Hapus Izin / Buka Blokir -- pilih member')
+  );
+  const navRow = new ActionRowBuilder().addComponents(buildBackButton('panel_voicecontrol'), buildHomeButton());
+  return [allowRow, blockRow, clearRow, navRow];
+}
+
+/**
+ * Layar ephemeral TERPISAH "Kelola Kepemilikan" (dibuka dari tombol
+ * panelvc_ownership, Owner-only). 3 UserSelectMenu buat Tambah Manager /
+ * Hapus Manager / Transfer Kepemilikan, pola sama kayak
+ * buildVoiceControlAccessRows() di atas.
+ */
+function buildVoiceControlOwnershipRows() {
+  const addRow = new ActionRowBuilder().addComponents(
+    new UserSelectMenuBuilder()
+      .setCustomId('panelvc_ownership_addmanager')
+      .setPlaceholder('➕ Tambah Manager -- pilih member')
+  );
+  const removeRow = new ActionRowBuilder().addComponents(
+    new UserSelectMenuBuilder()
+      .setCustomId('panelvc_ownership_removemanager')
+      .setPlaceholder('➖ Hapus Manager -- pilih member')
+  );
+  const transferRow = new ActionRowBuilder().addComponents(
+    new UserSelectMenuBuilder()
+      .setCustomId('panelvc_ownership_transfer')
+      .setPlaceholder('👑 Transfer Kepemilikan -- pilih member')
+  );
+  const navRow = new ActionRowBuilder().addComponents(buildBackButton('panel_voicecontrol'), buildHomeButton());
+  return [addRow, removeRow, transferRow, navRow];
+}
+
 module.exports = {
   buildPanelCard,
   buildHomeEmbed,
@@ -310,5 +426,8 @@ module.exports = {
   buildTiktokSubRow,
   buildGiveawaySubRow,
   buildAskRow,
+  buildVoiceControlRows,
+  buildVoiceControlAccessRows,
+  buildVoiceControlOwnershipRows,
   PANEL_COLOR,
 };
