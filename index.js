@@ -1018,11 +1018,27 @@ client.on('interactionCreate', async (interaction) => {
 
       try {
         if (interaction.customId === 'music_pause') {
-          if (musicManager.isPaused()) musicManager.resume(guildId);
+          const wasPaused = musicManager.isPaused();
+          if (wasPaused) musicManager.resume(guildId);
           else musicManager.pause(guildId);
           // Pause/resume state-nya langsung berubah (sinkron), aman di-render ulang sekarang juga.
           const { embed, components } = buildNowPlayingCard(guildId);
           await interaction.update({ embeds: [embed], components });
+
+          // Kalau aksinya PAUSE (bukan resume), kirim embed PESAN BARU
+          // terpisah (bukan nimpa card Now Playing) ke voice chat, nunjukin
+          // siapa yang baru nge-pause -- biar kelihatan semua yang lagi di
+          // voice channel, nggak cuma yang klik doang (beda dari card-nya
+          // sendiri yang cuma di-update di tempat).
+          if (!wasPaused) {
+            try {
+              await interaction.channel.send({
+                embeds: [new EmbedBuilder().setColor(0xf5c518).setDescription(`**${interaction.user.tag}** baru nge-pause musik ini.`)],
+              });
+            } catch (err) {
+              log(`[MUSIC BUTTON] Gagal kirim embed info pause: ${err?.stack || err}`);
+            }
+          }
         } else if (interaction.customId === 'music_autoplay') {
           musicManager.setAutoplay(guildId, !musicManager.isAutoplayEnabled(guildId));
           const { embed, components } = buildNowPlayingCard(guildId);
