@@ -1,10 +1,14 @@
 const config = require('./config');
 const { PermissionFlagsBits } = require('discord.js');
+const voiceControlManager = require('./voiceControlManager');
 
 /**
  * Cek apakah member boleh /stop atau /skip musik: owner server, punya role
- * Staff, ATAU dia yang minta lagu yang LAGI DIPUTAR sekarang. Selain itu
- * (termasuk yang minta lagu LAIN di antrian, bukan yang lagi main), ditolak.
+ * Staff, dia yang minta lagu yang LAGI DIPUTAR sekarang, ATAU Owner/Manager
+ * Voice Control buat channel voice fix Satpam Voice (lihat voiceControlManager.js
+ * -- Administrator juga ke-cover otomatis lewat canManage sebagai override).
+ * Selain itu (termasuk yang minta lagu LAIN di antrian, bukan yang lagi
+ * main), ditolak.
  *
  * `member` = GuildMember (dari interaction.member / message.member).
  * `currentTrack` = queue.current, boleh null.
@@ -14,6 +18,7 @@ function canControlPlayback(member, currentTrack) {
   if (member.guild?.ownerId === member.id) return true;
   if (config.staffRoleId && member.roles?.cache?.has(config.staffRoleId)) return true;
   if (currentTrack && currentTrack.requestedById && currentTrack.requestedById === member.id) return true;
+  if (voiceControlManager.canManage(config.voiceChannelId, member)) return true;
   return false;
 }
 
