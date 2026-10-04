@@ -1033,7 +1033,11 @@ client.on('interactionCreate', async (interaction) => {
           if (!wasPaused) {
             try {
               await interaction.channel.send({
-                embeds: [new EmbedBuilder().setColor(0xf5c518).setDescription(`**${interaction.user.tag}** baru nge-pause musik ini.`)],
+                embeds: [
+                  new EmbedBuilder()
+                    .setColor(0xf5c518)
+                    .setDescription(`**${interaction.member?.displayName || interaction.user.username}** baru nge-pause musik ini.`),
+                ],
               });
             } catch (err) {
               log(`[MUSIC BUTTON] Gagal kirim embed info pause: ${err?.stack || err}`);
