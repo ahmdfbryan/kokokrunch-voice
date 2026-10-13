@@ -88,19 +88,58 @@ function buildVoiceControlEmbed(channel, member) {
 // =====================================================================
 
 async function claimOwnership(channel, member) {
-  return voiceControlStore.claimOwnership(channel.id, member.id, member.user?.tag || member.id);
+  const result = voiceControlStore.claimOwnership(channel.id, member.id, member.user?.tag || member.id);
+  if (result.ok && isChannelLocked(channel)) await grantStaffAccess(channel, [member.id]);
+  return result;
+}
+
+/** Owner + semua Manager (yang harus tetap bisa masuk walau channel dikunci). */
+function getStaffIds(channelId) {
+  const entry = voiceControlStore.getEntry(channelId);
+  return [entry.ownerId, ...entry.managerIds].filter(Boolean);
+}
+
+/** Kasih izin Connect (allow-override) ke Owner+Manager -- dipanggil pas lock & pas daftar staff berubah SAAT channel lagi dikunci. */
+async function grantStaffAccess(channel, ids = getStaffIds(channel.id)) {
+  for (const id of ids) {
+    await channel.permissionOverwrites.edit(id, { Connect: true }, { reason: 'Voice Control: Owner/Manager tetap bisa masuk saat channel dikunci' });
+  }
+}
+
+/** Cabut allow-override Owner/Manager (pas unlock, atau pas seseorang dicopot dari staff). */
+async function revokeStaffAccess(channel, ids) {
+  for (const id of ids) {
+    if (id === channel.client.user?.id) continue; // bot sendiri selalu dijaga
+    try {
+      await channel.permissionOverwrites.delete(id, 'Voice Control: akses khusus staff dicabut');
+    } catch {
+      // overwrite-nya emang nggak ada / udah kehapus -- aman diabaikan
+    }
+  }
 }
 
 async function transferOwnership(channel, newOwner) {
-  return voiceControlStore.transferOwnership(channel.id, newOwner.id, newOwner.user?.tag || newOwner.id);
+  const oldOwnerId = voiceControlStore.getOwnerId(channel.id);
+  const result = voiceControlStore.transferOwnership(channel.id, newOwner.id, newOwner.user?.tag || newOwner.id);
+  if (isChannelLocked(channel)) {
+    await grantStaffAccess(channel, [newOwner.id]);
+    if (oldOwnerId && oldOwnerId !== newOwner.id && !getStaffIds(channel.id).includes(oldOwnerId)) {
+      await revokeStaffAccess(channel, [oldOwnerId]);
+    }
+  }
+  return result;
 }
 
 async function addManager(channel, newManager) {
-  return voiceControlStore.addManager(channel.id, newManager.id);
+  const result = voiceControlStore.addManager(channel.id, newManager.id);
+  if (result.ok && isChannelLocked(channel)) await grantStaffAccess(channel, [newManager.id]);
+  return result;
 }
 
 async function removeManager(channel, managerMember) {
-  return voiceControlStore.removeManager(channel.id, managerMember.id);
+  const result = voiceControlStore.removeManager(channel.id, managerMember.id);
+  if (result.ok && isChannelLocked(channel)) await revokeStaffAccess(channel, [managerMember.id]);
+  return result;
 }
 
 async function renameChannel(channel, newName, reason) {
@@ -126,12 +165,14 @@ async function toggleLock(channel) {
 
   if (locked) {
     await channel.permissionOverwrites.edit(everyoneId, { Connect: null }, { reason: 'Voice Control: unlock' });
+    await revokeStaffAccess(channel, getStaffIds(channel.id));
   } else {
     await channel.permissionOverwrites.edit(everyoneId, { Connect: false }, { reason: 'Voice Control: lock' });
     const botId = channel.client.user?.id;
     if (botId) {
       await channel.permissionOverwrites.edit(botId, { Connect: true }, { reason: 'Voice Control: self-protect saat lock' });
     }
+    await grantStaffAccess(channel);
   }
 
   return { ok: true, locked: !locked };
