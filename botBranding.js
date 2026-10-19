@@ -1,12 +1,12 @@
 // Footer brand standar dipakai di SEMUA fitur -- logo bot (foto profil
-// Discord bot-nya sendiri) + teks "Satpam Voice" + timestamp NATIVE Discord
-// (otomatis dirender client jadi "Satpam Voice • Today at HH:MM AM/PM").
+// Discord bot-nya sendiri) + teks "Noname Studios" + timestamp NATIVE Discord
+// (otomatis dirender client jadi "Noname Studios • Today at HH:MM AM/PM").
 // Disatuin di 1 modul kecil ini biar semua fitur (Panel, ID Card, Streak,
 // Welcome Message, Now Playing, Giveaway, dst) konsisten formatnya & gampang
 // diganti sekaligus kalau suatu saat mau diubah lagi -- daripada nulis
 // `.setFooter({text: '...'})` sendiri-sendiri di tiap file fitur.
 
-const BRAND_FOOTER_TEXT = 'Satpam Voice';
+const BRAND_FOOTER_TEXT = process.env.BRAND_NAME || 'Noname Studios';
 
 let botAvatarURL = null;
 
@@ -21,7 +21,7 @@ function setBotAvatarURL(url) {
 }
 
 /**
- * Terapkan footer brand standar (logo bot + "Satpam Voice") + timestamp ke
+ * Terapkan footer brand standar (logo bot + "Noname Studios") + timestamp ke
  * sebuah EmbedBuilder yang udah dibikin. Balikin embed yang sama (chainable)
  * biar gampang dipakai di akhir fungsi builder embed manapun.
  */
