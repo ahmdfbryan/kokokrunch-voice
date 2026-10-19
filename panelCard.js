@@ -116,7 +116,10 @@ function buildHomeButtons() {
     buildHomeButton(),
     new ButtonBuilder().setCustomId('panel_music').setLabel('Musik').setEmoji('🎵').setStyle(ButtonStyle.Secondary),
     new ButtonBuilder().setCustomId('panel_featured').setLabel('Featured').setEmoji('✨').setStyle(ButtonStyle.Secondary),
-    new ButtonBuilder().setCustomId('panel_help').setLabel('Bantuan').setEmoji('ℹ️').setStyle(ButtonStyle.Secondary)
+    new ButtonBuilder().setCustomId('panel_help').setLabel('Bantuan').setEmoji('ℹ️').setStyle(ButtonStyle.Secondary),
+    // Tombol Link (bukan customId) -- diklik langsung buka profil Discord
+    // pembuat bot, nggak lewat interactionCreate sama sekali.
+    new ButtonBuilder().setLabel('CC').setEmoji('👤').setStyle(ButtonStyle.Link).setURL('https://discord.com/users/1141222257604182020')
   );
   return [row];
 }
