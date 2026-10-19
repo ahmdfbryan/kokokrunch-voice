@@ -29,7 +29,7 @@ function saveSync() {
 }
 
 function setPanel(channelId) {
-  data[channelId] = { panelMessageId: null, screen: null };
+  data[channelId] = { panelMessageId: null, screen: null, v2: true };
   saveSync();
 }
 
@@ -65,4 +65,22 @@ function getPanelScreen(channelId) {
   return data[channelId]?.screen || null;
 }
 
-module.exports = { load, setPanel, removePanel, getPanel, setPanelMessageId, setPanelScreen, getPanelScreen };
+/**
+ * Migrasi ke Components V2: pesan panel LAMA (format embed) nggak bisa
+ * di-edit jadi V2 -- harus dikirim ulang. Panel dianggap "sudah V2" kalau
+ * ada flag `v2` di datanya (dibuat otomatis oleh setPanel / markPanelV2).
+ */
+function listPanelsNeedingV2() {
+  return Object.entries(data)
+    .filter(([, panel]) => panel && !panel.v2)
+    .map(([channelId]) => channelId);
+}
+
+function markPanelV2(channelId) {
+  if (!data[channelId]) return;
+  data[channelId].v2 = true;
+  data[channelId].screen = null; // snapshot layar lama (format embed) dibuang, balik ke Home
+  saveSync();
+}
+
+module.exports = { listPanelsNeedingV2, markPanelV2, load, setPanel, removePanel, getPanel, setPanelMessageId, setPanelScreen, getPanelScreen };
