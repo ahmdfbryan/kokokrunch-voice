@@ -1,4 +1,4 @@
-// Generator gambar "ID Card Satpam Voice" -- dipakai bareng idCardManager.js
+// Generator gambar "ID Card Noname Studios" -- dipakai bareng idCardManager.js
 // (yang nyimpen/nyusun datanya) buat bikin kartu identitas VISUAL (PNG),
 // bukan cuma teks embed biasa. Digambar manual pake canvas (bukan
 // nge-crop/nempel template gambar), jadi semua data dinamis (nama, foto
@@ -27,7 +27,7 @@ const COLORS = {
   bg: '#0a0c11',
   bgGradientTop: '#0f131c',
   border: '#242938',
-  accent: '#3b82f6', // biru "Satpam Voice"
+  accent: '#3b82f6', // biru "Noname Studios"
   accentDark: '#1d4ed8',
   white: '#f5f6f8',
   muted: '#8892a0',
@@ -278,14 +278,14 @@ async function renderIdCardImage(card, discordUser, guildName) {
   ctx.fillStyle = COLORS.white;
   ctx.fillText(formatDate(card.createdAt), dateBlockX + 42, dateY + 24);
 
-  // Footer kiri bawah: ikon perisai kecil + "KokoKrunch Studios"
+  // Footer kiri bawah: ikon perisai kecil + "Noname Studios Creative"
   drawShield(ctx, 106, HEIGHT - 68, 30, COLORS.accent);
   ctx.font = '22px "ID Card Body"';
   ctx.fillStyle = COLORS.muted;
   ctx.fillText('|', 130, HEIGHT - 58);
   ctx.font = 'bold 24px "ID Card Body Bold"';
   ctx.fillStyle = COLORS.white;
-  ctx.fillText('KokoKrunch Studios', 148, HEIGHT - 58);
+  ctx.fillText('Noname Studios Creative', 148, HEIGHT - 58);
 
   return canvas.toBuffer('image/png');
 }
