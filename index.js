@@ -29,6 +29,7 @@ const {
   entersState,
 } = require('@discordjs/voice');
 
+require('./v2Shim').install(); // semua embed otomatis dikirim sebagai Components V2 (lihat v2Shim.js)
 const config = require('./config');
 const musicManager = require('./musicManager');
 const musicPlaylistStore = require('./musicPlaylistStore');
@@ -87,7 +88,7 @@ const { COLOR, textEmbed } = require('./musicFormat');
 const { buildCommandsListEmbed } = require('./commandsList');
 const { buildLeaderboardEmbed } = require('./voiceActivityCommands');
 
-const EMBED_COLOR = 0x5865f2;
+const EMBED_COLOR = 0x3b82f6;
 // Catatan: URL ini dikoreksi dari input asli yang ada teks "hyphenhyphen"
 // di tengahnya (kemungkinan artefak text-processing yang nulis ulang "--"
 // jadi kata), diganti balik jadi "--". Kalau gambar nggak muncul, cek ulang
@@ -198,8 +199,8 @@ async function onQueueEmpty(guildId, opts = {}) {
     const channel = await client.channels.fetch(queue.textChannelId);
     const embed = new EmbedBuilder()
       .setColor(EMBED_COLOR)
-      .setAuthor({ name: '🎵 Satpam Voice' })
-      .setDescription('Thank you for using our service **Satpam Voice**!')
+      .setAuthor({ name: '🎵 Noname Studios' })
+      .setDescription('Thank you for using our service **Noname Studios**!')
       .setImage(QUEUE_FINISHED_IMAGE_URL)
       .setFooter({ text: 'Your suggestions and opinions are always considered! • Crafted by ahmdfbryan' })
       .setTimestamp();
@@ -616,7 +617,7 @@ function makePanelScreenSnapshotSaver(interaction) {
 
 /**
  * Voice Control SELALU nunjuk ke 1 channel voice fix yang sama (tempat
- * Satpam Voice nongkrong 24/7, config.voiceChannelId) -- BUKAN sistem
+ * Noname Studios nongkrong 24/7, config.voiceChannelId) -- BUKAN sistem
  * "Join to Create" multi-channel.
  */
 async function fetchVoiceControlChannel() {
@@ -883,7 +884,7 @@ client.on('voiceStateUpdate', (oldState, newState) => {
   }
 });
 
-// Pesan sambutan pas ada member yang join voice channel target Satpam Voice
+// Pesan sambutan pas ada member yang join voice channel target Noname Studios
 // -- dikirim ke text chat bawaan voice channel itu sendiri ("Voice Channel
 // Chat"). Bot butuh izin Send Messages & Embed Links di voice channel
 // target buat ini jalan.
@@ -1226,7 +1227,7 @@ client.on('interactionCreate', async (interaction) => {
       try {
         const embed = new EmbedBuilder()
           .setColor(PANEL_COLOR)
-          .setAuthor({ name: '🪪  ID Card Satpam Voice' })
+          .setAuthor({ name: '🪪  ID Card Noname Studios' })
           .setDescription('Bikin kartu identitas kamu sendiri, atau lihat yang udah pernah dibuat.');
         await respondPanelScreen(interaction, embed, [buildIdCardSubRow()]);
       } catch (err) {
@@ -1359,7 +1360,7 @@ client.on('interactionCreate', async (interaction) => {
 
     // ============================================================
     // VOICE CONTROL: tombol "Voice Control" di Featured -> munculin layar
-    // kontrol buat channel voice fix Satpam Voice (rename/status/manage
+    // kontrol buat channel voice fix Noname Studios (rename/status/manage
     // akses/lock-unlock/transfer kepemilikan). Owner+Manager model: Owner
     // (diklaim lewat tombol, atau ditransfer) + Manager (ditambahin Owner)
     // sama-sama boleh pakai aksi harian, tapi CUMA Owner (atau
@@ -1411,7 +1412,7 @@ client.on('interactionCreate', async (interaction) => {
           .setStyle(TextInputStyle.Short)
           .setRequired(true)
           .setMaxLength(100)
-          .setPlaceholder(channel.name || 'misal: Lounge Satpam Voice');
+          .setPlaceholder(channel.name || 'misal: Lounge Noname Studios');
         modal.addComponents(new ActionRowBuilder().addComponents(nameInput));
         await interaction.showModal(modal);
       } catch (err) {
@@ -2516,7 +2517,7 @@ client.on('messageCreate', async (message) => {
   await handlePrefixCommand(message, log);
 });
 
-// AI chat: mention bot di channel voice Satpam Voice buat ngobrol. Dibatasi
+// AI chat: mention bot di channel voice Noname Studios buat ngobrol. Dibatasi
 // cuma di channel itu (bukan di channel teks lain), dan inget konteks
 // percakapan per user (lewat aiChat.js).
 client.on('messageCreate', async (message) => {
@@ -2564,6 +2565,25 @@ client.on('messageCreate', async (message) => {
   }
 });
 
+/**
+ * Panel lama (format embed) dikirim ulang sekali sebagai Components V2 --
+ * pesan lama dihapus oleh repositionChannelStack, pesan baru langsung V2.
+ */
+async function migratePanelsToV2() {
+  for (const channelId of panelStore.listPanelsNeedingV2()) {
+    try {
+      const channel = await client.channels.fetch(channelId);
+      const guildId = channel?.guildId || channel?.guild?.id || currentGuildId;
+      if (!guildId) continue;
+      panelStore.markPanelV2(channelId);
+      await repositionChannelStack(guildId, channelId);
+      log(`[PANEL] Panel channel ${channelId} dimigrasi ke Components V2.`);
+    } catch (err) {
+      log(`[PANEL] Gagal migrasi panel channel ${channelId}: ${err?.message || err}`);
+    }
+  }
+}
+
 client.once('ready', () => {
   log(`Login sebagai ${client.user.tag}`);
   // Biar semua embed fitur lain (ID Card, Streak, Welcome, Giveaway, dst)
@@ -2573,6 +2593,7 @@ client.once('ready', () => {
   startHealthCheck();
   populateExistingVoiceSessions();
   giveawayManager.startScheduler(client);
+  migratePanelsToV2().catch((err) => log(`[PANEL] Gagal migrasi panel ke V2: ${err?.stack || err}`));
   // Fitur command dari live TikTok ("!request <judul>", "!autoplay on/off")
   // -- otomatis nonaktif kalau belum ada username yang di-set (lewat tombol
   // TikTok di panel, atau TIKTOK_USERNAME di .env).
