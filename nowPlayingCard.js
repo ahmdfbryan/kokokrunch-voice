@@ -1,7 +1,7 @@
 const { EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle } = require('discord.js');
 const musicManager = require('./musicManager');
 
-const COLOR = 0x5865f2;
+const COLOR = 0x3b82f6;
 
 function formatTime(totalSeconds) {
   const total = Math.max(0, Math.floor(totalSeconds || 0));
@@ -35,7 +35,7 @@ function buildNowPlayingCard(guildId) {
     return {
       embed: new EmbedBuilder()
         .setColor(0x2b2d31)
-        .setAuthor({ name: '🎵 Satpam Voice' })
+        .setAuthor({ name: '🎵 Noname Studios' })
         .setDescription('No music is currently playing.'),
       components: [],
     };
