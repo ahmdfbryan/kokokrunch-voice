@@ -1,4 +1,4 @@
-// Fitur "ID Card Satpam Voice" -- kartu identitas member yang dibikin
+// Fitur "ID Card Noname Studios" -- kartu identitas member yang dibikin
 // sendiri (Nama, Jenis Kelamin, Domisili, Cita-Cita, Hobi lewat modal),
 // sisanya (ID No, Join Server, Dibuat Tanggal, foto profil Discord)
 // digenerate otomatis sama bot.
@@ -51,8 +51,8 @@ function buildIdCardEmbed(card, attachmentFileName) {
     .setColor(ID_CARD_COLOR)
     .setAuthor({ name: `🪪  ID Card — ${formatIdNo(card.idNo)}` })
     .setImage(`attachment://${attachmentFileName}`);
-  // applyBrandFooter nempelin logo bot + "Satpam Voice" + timestamp native
-  // Discord (otomatis jadi "Satpam Voice • Today at HH:MM AM/PM").
+  // applyBrandFooter nempelin logo bot + "Noname Studios" + timestamp native
+  // Discord (otomatis jadi "Noname Studios • Today at HH:MM AM/PM").
   return botBranding.applyBrandFooter(embed);
 }
 
