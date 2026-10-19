@@ -7,7 +7,7 @@ const {
   UserSelectMenuBuilder,
 } = require('discord.js');
 
-const PANEL_COLOR = 0x3b82f6; // biru, senada sama warna ID Card & tema Satpam Voice
+const PANEL_COLOR = 0x3b82f6; // biru, senada sama warna ID Card & tema Noname Studios
 
 /**
  * Format durasi uptime bot jadi teks singkat, misal "2 hari 5 jam 12 menit"
@@ -91,17 +91,16 @@ function buildHomeEmbed(client, commandCount) {
     // nampilin logo/icon bot di samping teksnya. Discord nggak nge-render
     // markdown ** di author.name, jadi teksnya nggak bold beneran, tapi
     // fontnya sendiri udah lumayan tegas/semi-bold secara default.
-    .setAuthor({ name: 'SATPAM VOICE', iconURL: botAvatarURL || undefined })
+    .setAuthor({ name: 'NONAME STUDIOS', iconURL: botAvatarURL || undefined })
     .setDescription(
       [
-        '**Mau menggunakan fitur Satpam Voice? Semua kontrolnya sudah tersedia di panel ini.**',
+        '**Mau menggunakan fitur Noname Studios? Semua kontrolnya sudah tersedia di panel ini.**',
         '',
         '**Stats**',
         `> **📜 \`${commandCount ?? 0}\` Commands**`,
         `> **⏱️ \`${uptimeText}\` Uptime**`,
         `> **📶 \`${pingMs}ms\` Ping**`,
         '> **🟢 `Online` Status**',
-        '> **Made by `Satpam Voice`**',
       ].join('\n')
     )
     .setThumbnail(botAvatarURL || null);
@@ -117,10 +116,7 @@ function buildHomeButtons() {
     buildHomeButton(),
     new ButtonBuilder().setCustomId('panel_music').setLabel('Musik').setEmoji('🎵').setStyle(ButtonStyle.Secondary),
     new ButtonBuilder().setCustomId('panel_featured').setLabel('Featured').setEmoji('✨').setStyle(ButtonStyle.Secondary),
-    new ButtonBuilder().setCustomId('panel_help').setLabel('Bantuan').setEmoji('ℹ️').setStyle(ButtonStyle.Secondary),
-    // Tombol Link (bukan customId) -- diklik langsung buka profil Discord
-    // pembuat bot, nggak lewat interactionCreate sama sekali.
-    new ButtonBuilder().setLabel('CC').setEmoji('👤').setStyle(ButtonStyle.Link).setURL('https://discord.com/users/1141222257604182020')
+    new ButtonBuilder().setCustomId('panel_help').setLabel('Bantuan').setEmoji('ℹ️').setStyle(ButtonStyle.Secondary)
   );
   return [row];
 }
@@ -143,7 +139,7 @@ function buildFeaturedEmbed() {
     .setColor(PANEL_COLOR)
     .setAuthor({ name: '✨  Fitur Bot' })
     .setDescription(
-      '**Semua fitur tambahan Satpam Voice ada di sini.**\n\nTinggal pilih salah satu tombol di bawah buat langsung pakai fiturnya.'
+      '**Semua fitur tambahan Noname Studios ada di sini.**\n\nTinggal pilih salah satu tombol di bawah buat langsung pakai fiturnya.'
     );
 }
 
